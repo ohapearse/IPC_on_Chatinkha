@@ -1,0 +1,1356 @@
+---
+title: "Monte Carlo simulations of infection prevention and control data analysed using structural equation models v3"
+author: "Oliver Pearse"
+date: "14/01/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r start, echo = FALSE, warning = FALSE, message = FALSE}
+
+library(tidyverse)
+library(lavaan)
+library(mvtnorm)
+library(here)
+library(gt)
+
+sim_sorting <- function(func, reps = 100, size = 52, baseline = 20, mag = 20){
+  sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
+                                           baseline = baseline, size = size, mag = mag))
+  sim_mult2 <- lapply(sim_mult, as.numeric)
+  fit_mult <- data.frame(
+    chisq = c(sum(sim_mult2$chisq < sapply(sim_mult2$df, FUN = prod ,2), na.rm = TRUE) / length(sim_mult2$chisq), 
+              sum(sim_mult2$chisq < sapply(sim_mult2$df, FUN = prod ,3) , na.rm = TRUE) / length(sim_mult2$chisq)),
+    pvalue = c(sum(sim_mult2$pvalue >= 0.05, na.rm = TRUE) / length(sim_mult2$pvalue), 
+               sum(sim_mult2$pvalue >= 0.01, na.rm = TRUE) / length(sim_mult2$pvalue)),
+    rmsea = c(sum(sim_mult2$rmsea <= 0.05, na.rm = TRUE) / length(sim_mult2$rmsea), 
+              sum(sim_mult2$rmsea <= 0.08, na.rm = TRUE) / length(sim_mult2$rmsea)),
+    rmsea.pvalue = c(sum(sim_mult2$rmsea.pvalue > 0.1, na.rm = TRUE) / length(sim_mult2$rmsea.pvalue), 
+                     sum(sim_mult2$rmsea.pvalue > 0.05, na.rm = TRUE) / length(sim_mult2$rmsea.pvalue)),
+    srmr = c(sum(sim_mult2$srmr <= 0.05, na.rm = TRUE) / length(sim_mult2$srmr), 
+             sum(sim_mult2$srmr <= 0.1, na.rm = TRUE) / length(sim_mult2$srmr)),
+    nnfi = c(sum(sim_mult2$nnfi >= 0.97, na.rm = TRUE) / length(sim_mult2$nnfi), 
+             sum(sim_mult2$nnfi >= 0.95, na.rm = TRUE) / length(sim_mult2$nnfi)),
+    cfi = c(sum(sim_mult2$cfi >= 0.97, na.rm = TRUE) / length(sim_mult2$cfi), 
+            sum(sim_mult2$cfi >= 0.95, na.rm = TRUE) / length(sim_mult2$cfi)),
+    effect = c(mean(sim_mult2$effectall),
+               mean(sim_mult2$effectall)),
+    good = sum(sim_mult$pass == "Good", na.rm = TRUE) / length(sim_mult$pass),
+    acceptable = (sum(sim_mult$pass == "Acceptable", na.rm = TRUE) +  sum(sim_mult$pass == "Good", na.rm = TRUE)) / length(sim_mult$pass)
+  )
+  rownames(fit_mult) <- c("good", "acceptable")
+  return(fit_mult)
+}
+
+#sim_sorting2 <- function(func, reps = 100, ...){
+#  for(i in mags){
+#    sim_sorting()
+#  }
+#  
+#}
+
+extractor <- function(data){
+  all_data <- data.frame()
+  for (i in 1:length(data)){
+    name <- names(data[i])
+    chip_good <- data[[i]][1, 2]
+    chip_acc <- data[[i]][2, 2]
+    rmsea_good <- data[[i]][1, 3]
+    rmsea_acc <- data[[i]][2, 3]
+    srmr_good <- data[[i]][1, 5]
+    srmr_acc <- data[[i]][2, 5]
+    nnfi_good <- data[[i]][1, 6]
+    nnfi_acc <- data[[i]][2, 6]
+    cfi_good <- data[[i]][1, 7]
+    cfi_acc <- data[[i]][2, 7]
+    good <- data[[i]][1, 9]
+    acceptable <- data[[i]][1, 10]
+    first_data <- data.frame(name = name,
+                              chip_good = chip_good,
+                              chip_acc = chip_acc,
+                              rmsea_good = rmsea_good,
+                              rmsea_acc = rmsea_acc,
+                              srmr_good = srmr_good,
+                              srmr_acc = srmr_acc,
+                              nnfi_good = nnfi_good,
+                              nnfi_acc = nnfi_acc,
+                              cfi_good = cfi_good,
+                              cfi_acc = cfi_acc,
+                              overall_good = good,
+                              overall_acceptable = acceptable
+                             )
+    all_data <- rbind(all_data, first_data)                
+  }
+  all_data2 <- all_data %>%
+    separate(name, c("mag", "sample_size"), sep = "_") %>%
+    mutate(mag = as.numeric(substr(mag, 2, nchar(mag))),
+           sample_size = as.numeric(sample_size)) %>%
+    pivot_longer(cols = c("chip_good",
+                          "chip_acc",
+                          "rmsea_good",
+                          "rmsea_acc",
+                          "srmr_good",
+                          "srmr_acc",
+                          "nnfi_good",
+                          "nnfi_acc",
+                          "cfi_good",
+                          "cfi_acc",
+                          "overall_good",
+                          "overall_acceptable"),
+                 names_to = "fit_measures",
+                 values_to = "prop_passing")
+  #separate(prop_passing, c("measure", "goodness_of_fit", sep = "_"))
+  return(all_data2)
+}
+
+plotter <- function(data){
+  ggplot(data = data, aes(x = mag, y = prop_passing, colour = sample_size)) +
+    geom_point(position = position_jitter(width = 0.05, height = 0.05)) +
+    ylim(-0.1, 1.1) +
+    xlab("Magnitude of effect") +
+    ylab("% simulations fitting (either acceptable or good fit)") +
+    #labs(title = deparse(substitute(data))) +
+    facet_wrap(~fit_measures, ncol = 2) +
+    scale_color_viridis_c(option = "C", direction = -1)
+}
+
+plotter2 <- function(data){
+  ggplot(data = data, aes(x = sample_size, y = prop_passing)) +
+    geom_point() +
+    ylim(-0.1, 1.1) +
+    xlab("Sample size") +
+    ylab("% simulations fitting (either acceptable or good fit)") +
+    #labs(title = deparse(substitute(data))) +
+    facet_wrap(~fit_measures, ncol = 2) +
+    scale_color_viridis_c(option = "C", direction = -1)
+}
+
+runit <- function(func){
+  
+  #nine months
+  sim_2_39 <- sim_sorting(func = func, reps = 100, mag = 2, size = 39)
+  sim_5_39 <- sim_sorting(func = func, reps = 100, mag = 5, size = 39)
+  sim_10_39 <- sim_sorting(func = func, reps = 100, mag = 10, size = 39)
+  sim_15_39 <- sim_sorting(func = func, reps = 100, mag = 15, size = 39)
+  sim_20_39 <- sim_sorting(func = func, reps = 100, mag = 20, size = 39)
+  
+  #one year
+  sim_2_52 <- sim_sorting(func = func, reps = 100, mag = 2, size = 52)
+  sim_5_52 <- sim_sorting(func = func, reps = 100, mag = 5, size = 52)
+  sim_10_52 <- sim_sorting(func = func, reps = 100, mag = 10, size = 52)
+  sim_15_52 <- sim_sorting(func = func, reps = 100, mag = 15, size = 52)
+  sim_20_52 <- sim_sorting(func = func, reps = 100, mag = 20, size = 52)
+
+  #18 months
+  sim_2_78 <- sim_sorting(func = func, reps = 100, mag = 2, size = 78)
+  sim_5_78 <- sim_sorting(func = func, reps = 100, mag = 5, size = 78)
+  sim_10_78 <- sim_sorting(func = func, reps = 100, mag = 10, size = 78)
+  sim_15_78 <- sim_sorting(func = func, reps = 100, mag = 15, size = 78)
+  sim_20_78 <- sim_sorting(func = func, reps = 100, mag = 20, size = 78)
+
+
+  #four years
+  sim_2_208 <- sim_sorting(func = func, reps = 100, mag = 2, size = 208)
+  sim_5_208 <- sim_sorting(func = func, reps = 100, mag = 5, size = 208)
+  sim_10_208 <- sim_sorting(func = func, reps = 100, mag = 10, size = 208)
+  sim_15_208 <- sim_sorting(func = func, reps = 100, mag = 15, size = 208)
+  sim_20_208 <- sim_sorting(func = func, reps = 100, mag = 20, size = 208)
+
+  sim_data <- list(s2_39 = sim_2_39, 
+                 s5_39 = sim_5_39, 
+                 s10_39 = sim_10_39, 
+                 s15_39 = sim_15_39, 
+                 s20_39 = sim_20_39,
+                 s2_52 = sim_2_52, 
+                 s5_52 = sim_5_52, 
+                 s10_52 = sim_10_52, 
+                 s15_52 = sim_15_52, 
+                 s20_52 = sim_20_52,
+                 s2_78 = sim_2_78, 
+                 s5_78 = sim_5_78, 
+                 s10_78 = sim_10_78, 
+                 s15_78 = sim_15_78, 
+                 s20_78 = sim_20_78,
+                 s2_208 = sim_2_208, 
+                 s5_208 = sim_5_208, 
+                 s10_208 = sim_10_208, 
+                 s15_208 = sim_15_208, 
+                 s20_208 = sim_20_208)
+  
+  return(sim_data)
+}
+
+
+
+```
+
+## Research questions
+
+ 1) Do IPC interventions have an effect on sepsis? If so, which ones? And how much? 
+      a) Linear regression of IPC interventions on sepsis
+ 2) Is the cleanliness of specific ward "areas" more closely associated with the risk of sepsis? Is the cleanliness of specific ward "areas" more closely associated with specific IPC interventions? 
+      a) SEM
+ 3) Are measures of IPC fidelity adequate for understanding how well protected babies are from sepsis? 
+      a) PGFI/AIC of models including microbiology, fidelity or IPC
+ 4) Are there specific fidelity or microbiology thresholds we should be aiming for?
+      a) Work back from SEM results. Aim for a specific HAI rate then work back to fidelity and microbiology. 
+      
+      
+## Decision rules for accepting models
+
+To declare a structural equation model as having good or acceptable fit to the data I will look at the following fit metrics. It will need to meet the threshold in all of the fit metrics below to be declared a good or acceptable fitting model. The thresholds I will use are documented below: 
+
+ - Chi squared p value - >= 0.05 (good), >= 0.01 (acceptable)
+ - RMSEA - <= 0.05 (good), <= 0.08 (acceptable)
+ - SRMR - <= 0.05 (good), <= 0.1 (acceptable)
+ - CFI - >= 0.97 (good), >= 0.95 (acceptable)
+ - NNFI - >= 0.97 (good), >= 0.95 (acceptable)
+ 
+Though the following measures won't be used to determine whether the model fits or not, I will also report the Chi-squared, with degrees of freedom and p value, the RMSEA with it's interval and the PNFI. 
+
+### This is the basic model for environmental SEM
+
+```{r complex, echo = FALSE, warning = FALSE, message = FALSE}
+#simulating data ----
+sem_env_basic <- function(x, size = 52, baseline = 20, mag = 10){
+  
+  mv_2 <- function(x, y, sigma = sigma_2, ...){
+    param <- rmvnorm(n = 1, mean = c((1 - x) * 100, (1 - y) * 100), sigma = sigma_2)
+    param <- round(param)
+    return(param)
+  }
+  
+  #covariance matrix
+  sigma_2 <- matrix(c(2, 1, 
+                      1, 2), ncol = 2)
+  
+  mv_3 <- function(x, y, a, sigma = sigma_3, ...){
+    param <- rmvnorm(n = 1, mean = c((1 - x) * 100, (1 - y) * 100, 
+                                     (1 - a) * 100), sigma = sigma_3)
+    param <- round(param)
+    return(param)
+  }
+  
+    sigma_3 <- matrix(c(2, 2, 1, 
+                        1, 2, 1, 
+                        1, 1, 2), ncol = 3)
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  #hands
+  int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
+  int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
+  int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
+  num_hands <- (int_h1 + int_h2 + int_h3) * mag + baseline
+  #environment
+  int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
+  int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
+  int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
+  num_env <- (int_e1 + int_e2 + int_e3) * mag + baseline
+  #simulating fidelity of intervention
+  #overall environmental
+  fid_cot <- rbeta(size, num_env, 100 - num_env)
+  fid_floor <- rbeta(size, num_env, 100 - num_env)
+  fid_surf <- rbeta(size, num_env, 100 - num_env)
+  #hands
+  fid_mat <- rbeta(size, num_hands, 100 - num_hands)
+  fid_staff <- rbeta(size, num_hands, 100 - num_hands)
+  #microbiology
+  #environmental
+  mv_env <- mapply(FUN = mv_3, x = fid_cot, y = fid_floor, 
+                   a = fid_surf, MoreArgs = list(sigma = sigma_3))
+  micro_cot <- mv_env[1, ]
+  micro_floor <- mv_env[2, ]
+  micro_surf <- mv_env[3, ]
+  #hands
+  mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, MoreArgs = list(sigma = sigma_2))
+  micro_staff <- mv_hands[1, ]
+  micro_mat <- mv_hands[2, ]
+  #sepsis
+  #number of neonates
+  num <- rpois(size, 100)
+  max <- max(c(micro_cot, micro_floor, micro_surf, micro_staff, micro_mat)) * 5
+  prop <- (micro_cot + micro_floor + micro_surf + micro_staff + micro_mat) / (max * 2)
+  sepsis <- rbinom(size, num, prop) / num
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    #weeks = weeks,
+    int_e1 = int_e1,
+    int_e2 = int_e2,
+    int_e3 = int_e3,
+    int_h1 = int_h1,
+    int_h2 = int_h2,
+    int_h3 = int_h3,
+    fid_cot = fid_cot,
+    fid_floor = fid_floor,
+    fid_surf = fid_surf,
+    fid_mat = fid_mat,
+    fid_staff = fid_staff,
+    micro_cot = micro_cot,
+    micro_floor = micro_floor,
+    micro_surf = micro_surf,
+    micro_staff = micro_staff,
+    micro_mat = micro_mat,
+    sepsis = sepsis
+  )
+  
+  df2 <- as.data.frame(apply(df_ipc, 2, scale))
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    #regressions
+    fid_cot ~ int_e1 + int_e2 + int_e3
+    fid_floor ~ int_e1 + int_e2 + int_e3
+    fid_surf ~ int_e1 + int_e2 + int_e3
+    
+    micro_cot ~ fid_cot
+    micro_floor ~ fid_floor
+    micro_surf ~ fid_surf
+
+    sepsis ~ micro_cot + micro_floor + micro_surf + micro_mat + micro_staff
+    
+    #covariance
+    micro_cot ~~ micro_floor
+    micro_cot ~~ micro_surf
+    micro_floor ~~ micro_surf
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2)
+  
+  #finding the effect size
+  effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3, data = df2)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass = pass,
+                           params2,
+                           effect1 = effect$coefficients[2],
+                           effect2 = effect$coefficients[3],
+                           effect3 = effect$coefficients[4],
+                           effectall = mean(c(effect$coefficients[2], effect$coefficients[3], effect$coefficients[4]))
+  ))
+  rownames(data) <- c()
+  return(data)
+}
+
+
+#this function runs the simulator for different parameters
+list_env <- runit(sem_env_basic)
+
+#this function extracts the data from it
+data_env <- extractor(list_env)
+
+#this function plots the data
+plotter(data_env)
+
+```
+
+### Question 1: Do IPC interventions have an effect on sepsis? If so which ones? And how much? 
+
+
+We will fit an SEM model as illustrated above. However, alongside this we will also perform a standard linear regression of different IPC measures against sepsis. This will tell us the relationship between such measures and the rates of sepsis. 
+
+
+### Question 2: Is the cleanliness of specific ward "areas" more closely associated with the risk of sepsis? Is the cleanliness of specific ward "areas" more closely associated with specific IPC interventions? 
+
+Looking at this would allow us to determine which areas are most useful for intervention. If specific ward areas are most associated with sepsis and it is clear which interventions affect these primarily, then these areas can be targeted with interventions that are most likely to be effective.
+
+To determine how well the model will be at identifying individual ward areas as responsible for decreases in sepsis I will alter some of the relationships in the model. 
+
+#### First a model where only one area has an effect on sepsis. 
+
+```{r one area, echo = FALSE, warning = FALSE, message = FALSE}
+#simulating data ----
+sem_env_onearea <- function(x, size = 52, baseline = 20, mag = 10){
+  
+  mv_2 <- function(x, y, sigma = sigma_2, ...){
+    param <- rmvnorm(n = 1, mean = c((1 - x) * 100, (1 - y) * 100), sigma = sigma_2)
+    param <- round(param)
+    return(param)
+  }
+  
+  #covariance matrix
+  sigma_2 <- matrix(c(4, 2, 
+                      2, 4), ncol = 2)
+  
+  mv_3 <- function(x, y, a, sigma = sigma_3, ...){
+    param <- rmvnorm(n = 1, mean = c((1 - x) * 100, (1 - y) * 100, 
+                                     (1 - a) * 100), sigma = sigma_3)
+    param <- round(param)
+    return(param)
+  }
+  
+    sigma_3 <- matrix(c(4, 2, 2, 
+                        2, 4, 2, 
+                        2, 2, 4), ncol = 3)
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  #hands
+  int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
+  int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
+  int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
+  num_hands <- (int_h1 + int_h2 + int_h3) * mag + baseline
+  #environment
+  int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
+  int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
+  int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
+  num_env <- (int_e1 + int_e2 + int_e3) * mag + baseline
+  #simulating fidelity of intervention
+  #overall environmental
+  fid_cot <- rbeta(size, num_env, 100 - num_env)
+  fid_floor <- rbeta(size, num_env, 100 - num_env)
+  fid_surf <- rbeta(size, num_env, 100 - num_env)
+  #hands
+  fid_mat <- rbeta(size, num_hands, 100 - num_hands)
+  fid_staff <- rbeta(size, num_hands, 100 - num_hands)
+  #microbiology
+  #environmental
+  mv_env <- mapply(FUN = mv_3, x = fid_cot, y = fid_floor, 
+                   a = fid_surf, MoreArgs = list(sigma = sigma_3))
+  micro_cot <- mv_env[1, ]
+  micro_floor <- mv_env[2, ]
+  micro_surf <- mv_env[3, ]
+  #hands
+  mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, MoreArgs = list(sigma = sigma_2))
+  micro_staff <- mv_hands[1, ]
+  micro_mat <- mv_hands[2, ]
+  #sepsis
+  #number of neonates
+  num <- rpois(size, 100)
+  max <- max(c(micro_cot))
+  prop <- (micro_cot) / (max * 2)
+  sepsis <- rbinom(size, num, prop) / num
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    #weeks = weeks,
+    int_e1 = int_e1,
+    int_e2 = int_e2,
+    int_e3 = int_e3,
+    int_h1 = int_h1,
+    int_h2 = int_h2,
+    int_h3 = int_h3,
+    fid_cot = fid_cot,
+    fid_floor = fid_floor,
+    fid_surf = fid_surf,
+    fid_mat = fid_mat,
+    fid_staff = fid_staff,
+    micro_cot = micro_cot,
+    micro_floor = micro_floor,
+    micro_surf = micro_surf,
+    micro_staff = micro_staff,
+    micro_mat = micro_mat,
+    sepsis = sepsis
+  )
+  
+  df2 <- as.data.frame(apply(df_ipc, 2, scale))
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    #regressions
+    fid_cot ~ int_e1 + int_e2 + int_e3
+    fid_floor ~ int_e1 + int_e2 + int_e3
+    fid_surf ~ int_e1 + int_e2 + int_e3
+    
+    micro_cot ~ fid_cot
+    micro_floor ~ fid_floor
+    micro_surf ~ fid_surf
+
+    sepsis ~ micro_cot + micro_floor + micro_surf + micro_mat + micro_staff
+    
+    #covariance
+    micro_cot ~~ micro_floor
+    micro_cot ~~ micro_surf
+    micro_floor ~~ micro_surf
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2)
+  
+  #finding the effect size
+  effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3, data = df2)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass = pass,
+                           params2,
+                           effect1 = effect$coefficients[2],
+                           effect2 = effect$coefficients[3],
+                           effect3 = effect$coefficients[4],
+                           effectall = mean(c(effect$coefficients[2], effect$coefficients[3], effect$coefficients[4]))
+  ))
+  rownames(data) <- c()
+  return(data)
+}
+
+
+sim_onearea <- runit(sem_env_onearea)
+
+data_env <- extractor(sim_onearea)
+
+plotter(data_env)
+
+```
+
+It looks therefore like specifying relationships that are not there will not lead to the model being rejected, however the magnitude of the coefficients will show whether there is a meaningful effect or not. In this example this is illustrated by the magnitude of effect between micro_cot and sepsis `r sem_env_onearea(1)sepsis_._micro_cot` (variable for which there is a simulated relationship) and micro_surf and sepsis `r sem_env_onearea(1)sepsis_._micro_surf` (variable for which there is no simulated relationship).
+
+
+### Question 3: Are measures of IPC fidelity adequate for understanding how well protected babies are from sepsis?
+
+
+### Question 4: Are there specific fidelity or microbiology thresholds we should be aiming for?
+
+
+### This is a simulation of a model that is completely independent
+
+There are no relationships between any of the variables for this model, however, certain fit measures accept it. If you use the decision rule for overall passing or failing though, it is never accepted. That is why it is important to retain all of the fit measures when judging the models. 
+
+``` {r  completely independent model,  echo = FALSE, warning = FALSE, message = FALSE}
+
+#simulating data ----
+sem_env_ci <- function(x, size = 52, baseline = 20, mag = 10){
+
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  #environment
+  int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
+  int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
+  int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
+  num_env <- (int_e1 + int_e2 + int_e3) * mag + baseline
+  #simulating fidelity of intervention
+  #overall environmental
+  fid_cot <- rbeta(size, 50, 50)
+  fid_floor <- rbeta(size, 50, 50)
+  fid_surf <- rbeta(size, 50, 50)
+  #hands
+  #microbiology
+  #environmental
+  micro_cot <- round(rnorm(size, mean = 50, sd = 2))
+  micro_floor <- round(rnorm(size, mean = 50, sd = 2))
+  micro_surf <- round(rnorm(size, mean = 50, sd = 2))
+  micro_staff <- round(rnorm(size, mean = 50, sd = 2))
+  micro_mat <- round(rnorm(size, mean = 50, sd = 2))
+  #sepsis
+  #number of neonates
+  num <- rpois(size, 100)
+  prop <- 0.3
+  sepsis <- rbinom(size, num, prop) / num
+
+  #creating data frame
+  df_ipc <- data.frame(
+    #weeks = weeks,
+    int_e1 = int_e1,
+    int_e2 = int_e2,
+    int_e3 = int_e3,
+    #int_h1 = int_h1,
+    #int_h2 = int_h2,
+    #int_h3 = int_h3,
+    fid_cot = fid_cot,
+    fid_floor = fid_floor,
+    fid_surf = fid_surf,
+    #fid_mat = fid_mat,
+    #fid_staff = fid_staff,
+    micro_cot = micro_cot,
+    micro_floor = micro_floor,
+    micro_surf = micro_surf,
+    micro_staff = micro_staff,
+    micro_mat = micro_mat,
+    sepsis = sepsis
+  )
+  
+  df2 <- apply(df_ipc, 2, scale)
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    #regressions
+    fid_cot ~ int_e1 + int_e2 + int_e3
+    fid_floor ~ int_e1 + int_e2 + int_e3
+    fid_surf ~ int_e1 + int_e2 + int_e3
+    
+    micro_cot ~ fid_cot
+    micro_floor ~ fid_floor
+    micro_surf ~ fid_surf
+
+    sepsis ~ micro_cot + micro_floor + micro_surf + micro_mat + micro_staff
+    
+    #covariance
+    micro_cot ~~ micro_floor
+    micro_cot ~~ micro_surf
+    micro_floor ~~ micro_surf
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2, bounds = TRUE)
+  
+  #finding the effect size
+  effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass,
+                           params2,
+                           effect1 = effect$coefficients[2],
+                           effect2 = effect$coefficients[3],
+                           effect3 = effect$coefficients[4],
+                           effectall = mean(c(effect$coefficients[2], effect$coefficients[3], effect$coefficients[4]))
+  ))
+  rownames(data) <- c()
+  return(data)
+}
+
+#one year
+sim_2_52_ci <- sim_sorting(func = sem_env_ci, reps = 100, mag = 2)
+
+#18 months
+sim_2_78_ci <- sim_sorting(func = sem_env_ci, reps = 100, mag = 2, size = 78)
+
+
+#four years
+sim_2_208_ci <- sim_sorting(func = sem_env_ci, reps = 100, mag = 2, size = 208)
+
+sim_data_ci <- list(s2_52 = sim_2_52_ci, 
+                 s2_78 = sim_2_78_ci, 
+                 s2_208 = sim_2_208_ci)
+
+data_ci <- extractor(sim_data_ci)
+
+plotter2(data_ci)
+
+```
+
+### Exploring the limits of independent models
+
+Following are some models which are independent and very simple. 
+
+#### This model has just one relationship - 0 degrees of freedom
+
+``` {r completely independent 1,  echo = FALSE, warning = FALSE, message = FALSE}
+
+#simulating data ----
+sem_env_ci1 <- function(x, size = 52, baseline = 20, mag = 10){
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  a1 <- rnorm(size, 50, 10)
+  a2 <- rnorm(size, 50, 10)
+  a3 <- rnorm(size, 50, 10)
+  
+  b1 <- rnorm(size, 50, 10)
+  b2 <- rnorm(size, 50, 10)
+  b3 <- rnorm(size, 50, 10)
+  b4 <- rnorm(size, 50, 10)
+  
+  c1 <- rnorm(size, 50, 10)
+  c2 <- rnorm(size, 50, 10)
+  c3 <- rnorm(size, 50, 10)
+  c4 <- rnorm(size, 50, 10)
+  
+  s1 <- rnorm(size, 50, 10)
+  
+  
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    a1 = a1,
+    a2 = a2,
+    a3 = a3,
+    b1 = b1,
+    b2 = b2,
+    b3 = b3,
+    b4 = b4,
+    c1 = c1, 
+    c2 = c2,
+    c3 = c3,
+    c4 = c4,
+    s1 = s1
+  )
+  
+  df2 <- apply(df_ipc, 2, scale)
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    a1 ~ a2
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2, bounds = TRUE)
+  
+  #finding the effect size
+  #effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass,
+                           params2))
+  rownames(data) <- c()
+  return(data)
+}
+
+#one year
+sim_52_ci1 <- sim_sorting(func = sem_env_ci1, reps = 100)
+
+#18 months
+sim_78_ci1 <- sim_sorting(func = sem_env_ci1, reps = 100,size = 78)
+
+#four years
+sim_208_ci1 <- sim_sorting(func = sem_env_ci1, reps = 100, size = 208)
+
+sim_data_ci1 <- list(s_52 = sim_52_ci1,
+                    s_78 = sim_78_ci1,
+                    s_208 = sim_208_ci1)
+
+data_ci1 <- extractor(sim_data_ci1)
+
+plotter2(data_ci1)
+
+#reporting the degrees of freedom
+df <- sem_env_ci1(1)[, "df"]
+print("Degrees of Freedom:")
+print(df)
+```
+
+Strangely Chi squared does not fit for this model at all. It is because it has 0 degrees of freedom. This means that the model is just-identified and Chi-squared does not work. 
+
+#### This model has more variables but also 0 degrees of freedom
+
+This is the model:
+
+c1 ~ b1 + b2
+c2 ~ b2 + b1
+
+Degrees of freedom for this is 0. The same as the model above with only 1 relationship. It also has a similar effect as with the previous model. 
+
+``` {r completely independent degrees freedom 0,  echo = FALSE, warning = FALSE, message = FALSE}
+
+#simulating data ----
+sem_env_ci0 <- function(x, size = 52, baseline = 20, mag = 10){
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  a1 <- rnorm(size, 50, 10)
+  a2 <- rnorm(size, 50, 10)
+  a3 <- rnorm(size, 50, 10)
+  
+  b1 <- rnorm(size, 50, 10)
+  b2 <- rnorm(size, 50, 10)
+  b3 <- rnorm(size, 50, 10)
+  b4 <- rnorm(size, 50, 10)
+  
+  c1 <- rnorm(size, 50, 10)
+  c2 <- rnorm(size, 50, 10)
+  c3 <- rnorm(size, 50, 10)
+  c4 <- rnorm(size, 50, 10)
+  
+  s1 <- rnorm(size, 50, 10)
+  
+  
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    a1 = a1,
+    a2 = a2,
+    a3 = a3,
+    b1 = b1,
+    b2 = b2,
+    b3 = b3,
+    b4 = b4,
+    c1 = c1, 
+    c2 = c2,
+    c3 = c3,
+    c4 = c4,
+    s1 = s1
+  )
+  
+  df2 <- apply(df_ipc, 2, scale)
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    c1 ~ b1 + b2
+    c2 ~ b2 + b1
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2, bounds = TRUE)
+  
+  #finding the effect size
+  #effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass,
+                           params2))
+  rownames(data) <- c()
+  return(data)
+}
+
+#one year
+sim_52_ci0 <- sim_sorting(func = sem_env_ci0, reps = 100)
+
+#18 months
+sim_78_ci0 <- sim_sorting(func = sem_env_ci0, reps = 100,size = 78)
+
+#four years
+sim_208_ci0 <- sim_sorting(func = sem_env_ci0, reps = 100, size = 208)
+
+sim_data_ci0 <- list(s_52 = sim_52_ci0,
+                    s_78 = sim_78_ci0,
+                    s_208 = sim_208_ci0)
+
+data_ci0 <- extractor(sim_data_ci0)
+
+plotter2(data_ci0)
+
+#reporting the degrees of freedom
+df <- sem_env_ci0(1)[, "df"]
+print("Degrees of Freedom:")
+print(df)
+```
+
+
+#### This model has two relationships
+
+``` {r completely independent 2,  echo = FALSE, warning = FALSE, message = FALSE}
+
+#simulating data ----
+sem_env_ci2 <- function(x, size = 52, baseline = 20, mag = 10){
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  a1 <- rnorm(size, 50, 10)
+  a2 <- rnorm(size, 50, 10)
+  a3 <- rnorm(size, 50, 10)
+  
+  b1 <- rnorm(size, 50, 10)
+  b2 <- rnorm(size, 50, 10)
+  b3 <- rnorm(size, 50, 10)
+  b4 <- rnorm(size, 50, 10)
+  
+  c1 <- rnorm(size, 50, 10)
+  c2 <- rnorm(size, 50, 10)
+  c3 <- rnorm(size, 50, 10)
+  c4 <- rnorm(size, 50, 10)
+  
+  s1 <- rnorm(size, 50, 10)
+  
+  
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    a1 = a1,
+    a2 = a2,
+    a3 = a3,
+    b1 = b1,
+    b2 = b2,
+    b3 = b3,
+    b4 = b4,
+    c1 = c1, 
+    c2 = c2,
+    c3 = c3,
+    c4 = c4,
+    s1 = s1
+  )
+  
+  df2 <- apply(df_ipc, 2, scale)
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    c1 ~ b1
+    c2 ~ b2
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2, bounds = TRUE)
+  
+  #finding the effect size
+  #effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass,
+                           params2))
+  rownames(data) <- c()
+  return(data)
+}
+
+#one year
+sim_52_ci2 <- sim_sorting(func = sem_env_ci2, reps = 100)
+
+#18 months
+sim_78_ci2 <- sim_sorting(func = sem_env_ci2, reps = 100,size = 78)
+
+#four years
+sim_208_ci2 <- sim_sorting(func = sem_env_ci2, reps = 100, size = 208)
+
+sim_data_ci2 <- list(s_52 = sim_52_ci2,
+                    s_78 = sim_78_ci2,
+                    s_208 = sim_208_ci2)
+
+data_ci2 <- extractor(sim_data_ci2)
+
+plotter2(data_ci2)
+
+#reporting the degrees of freedom
+df <- sem_env_ci2(1)[, "df"]
+print("Degrees of Freedom:")
+print(df)
+```
+
+#### This model has three relationships
+
+``` {r completely independent 3,  echo = FALSE, warning = FALSE, message = FALSE}
+
+#simulating data ----
+sem_env_ci3 <- function(x, size = 52, baseline = 20, mag = 10){
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  a1 <- rnorm(size, 50, 10)
+  a2 <- rnorm(size, 50, 10)
+  a3 <- rnorm(size, 50, 10)
+  
+  b1 <- rnorm(size, 50, 10)
+  b2 <- rnorm(size, 50, 10)
+  b3 <- rnorm(size, 50, 10)
+  b4 <- rnorm(size, 50, 10)
+  
+  c1 <- rnorm(size, 50, 10)
+  c2 <- rnorm(size, 50, 10)
+  c3 <- rnorm(size, 50, 10)
+  c4 <- rnorm(size, 50, 10)
+  
+  s1 <- rnorm(size, 50, 10)
+  
+  
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    a1 = a1,
+    a2 = a2,
+    a3 = a3,
+    b1 = b1,
+    b2 = b2,
+    b3 = b3,
+    b4 = b4,
+    c1 = c1, 
+    c2 = c2,
+    c3 = c3,
+    c4 = c4,
+    s1 = s1
+  )
+  
+  df2 <- apply(df_ipc, 2, scale)
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    c1 ~ b1
+    c2 ~ b2
+    c3 ~ b3
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2, bounds = TRUE)
+  
+  #finding the effect size
+  #effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass,
+                           params2))
+  rownames(data) <- c()
+  return(data)
+}
+
+#one year
+sim_52_ci3 <- sim_sorting(func = sem_env_ci3, reps = 100)
+
+#18 months
+sim_78_ci3 <- sim_sorting(func = sem_env_ci3, reps = 100,size = 78)
+
+#four years
+sim_208_ci3 <- sim_sorting(func = sem_env_ci3, reps = 100, size = 208)
+
+sim_data_ci3 <- list(s_52 = sim_52_ci3,
+                    s_78 = sim_78_ci3,
+                    s_208 = sim_208_ci3)
+
+data_ci3 <- extractor(sim_data_ci3)
+
+plotter2(data_ci3)
+```
+
+
+They all seem to be accepted in certain situations by some of the fit measures (particularly Chi squared and RMSEA), though if you apply the decision rule then none of them are accepted. 
+
+#### This model has mis-specified relationships
+
+``` {r completely independent misspecified,  echo = FALSE, warning = FALSE, message = FALSE}
+
+#simulating data ----
+sem_env_mis <- function(x, size = 52, baseline = 20, mag = 10){
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  a1 <- rnorm(size, 50, 10)
+  a2 <- rnorm(size, 50, 10)
+  a3 <- rnorm(size, 50, 10)
+  a4 <- rnorm(size, 50, 10)
+  
+  b1 <- a1 + rnorm(size, 0, 1)
+  b2 <- a2 + rnorm(size, 0, 1)
+  b3 <- a3 + rnorm(size, 0, 1)
+  b4 <- a4 + rnorm(size, 0, 1)
+  
+  c1 <- rnorm(size, 50, 10)
+  c2 <- rnorm(size, 50, 10)
+  c3 <- rnorm(size, 50, 10)
+  c4 <- rnorm(size, 50, 10)
+  
+  s1 <- rnorm(size, 50, 10)
+  
+  
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    a1 = a1,
+    a2 = a2,
+    a3 = a3,
+    a4 = a4,
+    b1 = b1,
+    b2 = b2,
+    b3 = b3,
+    b4 = b4,
+    c1 = c1, 
+    c2 = c2,
+    c3 = c3,
+    c4 = c4,
+    s1 = s1
+  )
+  
+  df2 <- apply(df_ipc, 2, scale)
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    b1 ~ a2
+    b2 ~ a1
+    b3 ~ b4
+    b4 ~ b3
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2, bounds = TRUE)
+  
+  #finding the effect size
+  #effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 ~ "Good",
+                    try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass,
+                           params2))
+  rownames(data) <- c()
+  return(data)
+}
+
+#one year
+sim_52_mis <- sim_sorting(func = sem_env_mis, reps = 100)
+
+#18 months
+sim_78_mis <- sim_sorting(func = sem_env_mis, reps = 100,size = 78)
+
+#four years
+sim_208_mis <- sim_sorting(func = sem_env_mis, reps = 100, size = 208)
+
+sim_data_mis <- list(s_52 = sim_52_mis,
+                    s_78 = sim_78_mis,
+                    s_208 = sim_208_mis)
+
+data_mis <- extractor(sim_data_mis)
+
+plotter2(data_mis)
+```
