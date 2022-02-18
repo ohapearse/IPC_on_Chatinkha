@@ -17,9 +17,10 @@ library(mvtnorm)
 library(here)
 library(gt)
 
-sim_sorting <- function(func, reps = 100, size = 52, baseline = 20, mag = 20){
+sim_sorting <- function(func, reps = 100, size = 52, baseline = 20, mag = 10, sepsis_scale = 1, micro_scale = 1){
   sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
-                                           baseline = baseline, size = size, mag = mag))
+                                      baseline = baseline, size = size, 
+                                      mag = mag, sepsis_scale = sepsis_scale, micro_scale = micro_scale))
   sim_mult2 <- lapply(sim_mult, as.numeric)
   fit_mult <- data.frame(
     chisq = c(sum(sim_mult2$chisq < sapply(sim_mult2$df, FUN = prod ,2), na.rm = TRUE) / length(sim_mult2$chisq), 
@@ -189,34 +190,99 @@ runit <- function(func){
   sim_data <- list(s0_39 = sim_0_39, 
                  s1_39 = sim_1_39, 
                  s2_39 = sim_2_39, 
-                 s3_39 = sim_3_39, 
+                 s4_39 = sim_4_39, 
                  s6_39 = sim_6_39,
                  s9_39 = sim_9_39,
                  s0_52 = sim_0_52, 
                  s1_52 = sim_1_52, 
                  s2_52 = sim_2_52, 
-                 s3_52 = sim_3_52, 
+                 s4_52 = sim_4_52, 
                  s6_52 = sim_6_52,
                  s9_52 = sim_9_52,
                  s0_78 = sim_0_78, 
                  s1_78 = sim_1_78, 
                  s2_78 = sim_2_78, 
-                 s3_78 = sim_3_78, 
+                 s4_78 = sim_4_78, 
                  s6_78 = sim_6_78,
                  s9_78 = sim_9_78,
                  s0_208 = sim_0_208, 
                  s1_208 = sim_1_208, 
                  s2_208 = sim_2_208, 
-                 s3_208 = sim_3_208, 
+                 s4_208 = sim_4_208, 
                  s6_208 = sim_6_208,
                  s9_208 = sim_9_208)
   
-  beep(2)
   return(sim_data)
 }
 
-
-
+runeffect <- function(func){
+ mag <- c(rep(5, 9),
+          rep(10, 9),
+          rep(15, 9))
+ micro_scale <- rep(c(0.5, 0.5, 0.5,
+                      1, 1, 1,
+                      1.2, 1.2, 1.2), 3)
+ sepsis_scale = rep(c(1, 0.87, 0.75), 9)
+  
+ all_runs <- mapply(FUN = sim_sorting, 
+                    mag = mag, 
+                    micro_scale = micro_scale,
+                    sepsis_scale = sepsis_scale,
+                    MoreArgs = list(reps = 100, size = 52, func = sem_env_effects))
+ 
+  all_data <- data.frame()
+  for (i in 1:ncol(all_runs)){
+    #name <- names(data[i])
+    chip_good <- all_runs[2, ][[i]][1]
+    chip_acc <- all_runs[2, ][[i]][2]
+    rmsea_good <- all_runs[3, ][[i]][1]
+    rmsea_acc <- all_runs[3, ][[i]][2]
+    srmr_good <- all_runs[5, ][[i]][1]
+    srmr_acc <- all_runs[5, ][[i]][2]
+    nnfi_good <- all_runs[6, ][[i]][1]
+    nnfi_acc <- all_runs[6, ][[i]][2]
+    cfi_good <- all_runs[7, ][[i]][1]
+    cfi_acc <- all_runs[7, ][[i]][2]
+    effect <- all_runs[8, ][[i]][1]
+    good <- all_runs[9, ][[i]][1]
+    acceptable <- all_runs[10, ][[i]][1]
+    first_data <- data.frame( chip_good = chip_good,
+                              chip_acc = chip_acc,
+                              rmsea_good = rmsea_good,
+                              rmsea_acc = rmsea_acc,
+                              srmr_good = srmr_good,
+                              srmr_acc = srmr_acc,
+                              nnfi_good = nnfi_good,
+                              nnfi_acc = nnfi_acc,
+                              cfi_good = cfi_good,
+                              cfi_acc = cfi_acc,
+                              effect = effect,
+                              overall_good = good,
+                              overall_acceptable = acceptable
+                             )
+    all_data <- rbind(all_data, first_data)                
+  }
+  all_data2 <- cbind(mag, micro_scale, sepsis_scale, all_data)
+  all_data3 <- all_data2 %>%
+    pivot_longer(cols = c("chip_good",
+                          "chip_acc",
+                          "rmsea_good",
+                          "rmsea_acc",
+                          "srmr_good",
+                          "srmr_acc",
+                          "nnfi_good",
+                          "nnfi_acc",
+                          "cfi_good",
+                          "cfi_acc",
+                          "overall_good",
+                          "overall_acceptable"),
+                 names_to = "fit_measures",
+                 values_to = "prop_passing") %>%
+    mutate(effect = effect * -100)
+  #separate(prop_passing, c("measure", "goodness_of_fit", sep = "_"))
+  return(all_data3)
+}
+  
 ```
 
 
@@ -459,6 +525,339 @@ data_env <- extractor(list_env)
 plotter(data_env)
 
 ```
+### This now looks at the effects of changing the effect size of different components of the model on the proportion of simulations accepted
+
+```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
+
+##first looking for the effect of interventions on fidelity
+#this function simulates two situations where ipc interventions are either on or off and calculates the difference
+fid_test <- function(size, baseline, mag) {
+  intoff <- c(rep(0, size))
+  inton <- c(rep(1, size))
+  
+  linkon <- inton * mag + baseline
+  linkoff <- intoff * mag + baseline
+  
+  fidon <- rbeta(size, linkon, 100 - linkon)
+  fidoff <- rbeta(size, linkoff, 100 - linkoff)
+  difference <- mean(fidon) - mean(fidoff)
+  
+  return(difference)
+}
+
+#this function runs this simulation 10000 times
+tester_fid <- function(func, size, baseline, mag, repeats){
+  all <- c()
+  for(i in 1:repeats){
+    result <- func(size = size, baseline = baseline, mag = mag)
+    all <- c(all, result)
+  }
+  average <- mean(all)
+  return(average)
+}
+
+#small effect size
+small_fid <- tester_fid(func = fid_test, size = 52, baseline = 10, mag = 5, repeats = 10000)
+
+#moderate effect size
+mod_fid <- tester_fid(func = fid_test, size = 52, baseline = 10, mag = 15, repeats = 10000)
+
+#large effect size
+large_fid <- tester_fid(func = fid_test, size = 52, baseline = 10, mag = 25, repeats = 10000)
+
+#now looking at the effect of fidelity changes on microbiology
+micro_test <- function(size, baseline, increase, scale = 1){
+  fidon <- rep(baseline + increase, size)
+  fidoff <- rep(baseline, size)
+  
+  mv_3 <- function(x, y, a, sigma = sigma_3, ...){
+    param <- rmvnorm(n = 1, mean = c((1 - x) * scale * 100, (1 - y) * scale * 100, 
+                                     (1 - a )* scale * 100), sigma = sigma_3)
+    param <- round(param)
+    return(param)
+  }
+
+  sigma_3 <- matrix(c(20, 10, 10, 
+                    10, 20, 10, 
+                    10, 10, 20), ncol = 3)
+
+  mv_envon <- mapply(FUN = mv_3, x = fidon, y = fidoff, 
+                 a = fidoff, MoreArgs = list(sigma = sigma_3))
+  
+  mv_envoff <- mapply(FUN = mv_3, x = fidoff, y = fidoff, 
+                      a = fidoff, MoreArgs = list(sigma = sigma_3))
+  
+  micro_on <- mv_envon[1, ]
+  micro_off <- mv_envoff[1, ]
+  
+  microdiff <- mean(micro_on) - mean(micro_off)
+  return(microdiff)
+}
+
+#this function runs this simulation 10000 times
+tester_micro <- function(func, size, baseline, increase, scale, repeats){
+  all <- c()
+  for(i in 1:repeats){
+    result <- func(size = size, baseline = baseline, increase = increase, scale = scale)
+    all <- c(all, result)
+  }
+  average <- mean(all)
+  return(average)
+}
+
+#this is the effect of fidelity on micro
+#small effect size
+small_micro <- tester_micro(micro_test, size = 52, baseline = 0.5, increase = 0.1, scale = 0.5, repeats = 100)
+
+#moderate effect size
+mod_micro <- tester_micro(micro_test, size = 52, baseline = 0.5, increase = 0.1, scale = 1, repeats = 100)
+
+#large effect size
+large_micro <- tester_micro(micro_test, size = 52, baseline = 0.5, increase = 0.1, scale = 1.5, repeats = 100)
+
+##now looking at the effect of microbiology changes on sepsis
+
+sepsis_test <- function(size, baseline, decrease, scale){
+  num <- rpois(size, 100)
+  max <- (baseline + 10) * 5
+  propon <- (((baseline * 4) + (baseline - decrease) * scale) / (max * 2))
+  propoff <- baseline * 5 / (max * 2)
+  sepsison <- rbinom(size, num, propon) / num
+  sepsisoff <- rbinom(size, num, propoff) / num
+  sepsisdiff <- mean(sepsisoff) - mean(sepsison)
+  return(sepsisdiff)
+}
+
+#repeats multiple times
+tester_sepsis <- function(func, size, baseline, decrease, scale, repeats){
+  all <- c()
+  for(i in 1:repeats){
+    result <- func(size = size, baseline = baseline, decrease = decrease, scale = scale)
+    all <- c(all, result)
+  }
+  average <- mean(all)
+  return(average)
+}
+
+#the effect of change in 1 micro parameter on sepsis
+#small effect
+small_sepsis <- tester_sepsis(func = sepsis_test, size = 52, baseline = 90, decrease = 10, scale = 1, repeats = 10000)
+
+#moderate effect
+mod_sepsis <- tester_sepsis(func = sepsis_test, size = 52, baseline = 90, decrease = 10, scale = 0.87, repeats = 10000)
+
+#large effect
+large_sepsis <- tester_sepsis(func = sepsis_test, size = 52, baseline = 90, decrease = 10, scale = 0.75, repeats = 10000)
+
+#simulating data ----
+sem_env_effects <- function(x, size = 52, baseline = 20, mag = 10, micro_scale, sepsis_scale){
+  
+  mv_2 <- function(x, y, sigma = sigma_2, mv_scale = micro_scale, ...){
+    param <- rmvnorm(n = 1, mean = c((1 - x) * mv_scale * 100, (1 - y) * mv_scale * 100), sigma = sigma_2)
+    param <- round(param)
+    return(param)
+  }
+  
+  #covariance matrix
+  sigma_2 <- matrix(c(20, 10, 
+                      10, 20), ncol = 2)
+  
+  mv_3 <- function(x, y, a, sigma = sigma_3, mv_scale = micro_scale, ...){
+    param <- rmvnorm(n = 1, mean = c((1 - x) * mv_scale * 100, (1 - y) * mv_scale * 100, 
+                                     (1 - a) * mv_scale * 100), sigma = sigma_3)
+    param <- round(param)
+    return(param)
+  }
+  
+    sigma_3 <- matrix(c(20, 10, 10, 
+                        10, 20, 10, 
+                        10, 10, 20), ncol = 3)
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  #hands
+  int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
+  int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
+  int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
+  num_hands <- (int_h1 + int_h2 + int_h3) * mag + baseline
+  #environment
+  int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
+  int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
+  int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
+  num_env <- (int_e1 + int_e2 + int_e3) * mag + baseline
+  #simulating fidelity of intervention
+  #overall environmental
+  fid_cot <- rbeta(size, num_env, 100 - num_env)
+  fid_floor <- rbeta(size, num_env, 100 - num_env)
+  fid_surf <- rbeta(size, num_env, 100 - num_env)
+  #hands
+  fid_mat <- rbeta(size, num_hands, 100 - num_hands)
+  fid_staff <- rbeta(size, num_hands, 100 - num_hands)
+  #microbiology
+  #environmental
+  mv_env <- mapply(FUN = mv_3, x = fid_cot, y = fid_floor, 
+                   a = fid_surf, MoreArgs = list(sigma = sigma_3))
+  micro_cot <- mv_env[1, ]
+  micro_floor <- mv_env[2, ]
+  micro_surf <- mv_env[3, ]
+  #hands
+  mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, MoreArgs = list(sigma = sigma_2))
+  micro_staff <- mv_hands[1, ]
+  micro_mat <- mv_hands[2, ]
+  #sepsis
+  #number of neonates
+  num <- rpois(size, 100)
+  max <- max(c(micro_cot, micro_floor, micro_surf, micro_staff, micro_mat)) * 5
+  prop <- (micro_cot + micro_floor + micro_surf + micro_staff + micro_mat) * sepsis_scale / (max * 2)
+  sepsis <- rbinom(size, num, prop) / num
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    #weeks = weeks,
+    int_e1 = int_e1,
+    int_e2 = int_e2,
+    int_e3 = int_e3,
+    int_h1 = int_h1,
+    int_h2 = int_h2,
+    int_h3 = int_h3,
+    fid_cot = fid_cot,
+    fid_floor = fid_floor,
+    fid_surf = fid_surf,
+    fid_mat = fid_mat,
+    fid_staff = fid_staff,
+    micro_cot = micro_cot,
+    micro_floor = micro_floor,
+    micro_surf = micro_surf,
+    micro_staff = micro_staff,
+    micro_mat = micro_mat,
+    sepsis = sepsis
+  )
+  
+  df2 <- as.data.frame(apply(df_ipc, 2, scale))
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    #regressions
+    fid_cot ~ int_e1 + int_e2 + int_e3
+    fid_floor ~ int_e1 + int_e2 + int_e3
+    fid_surf ~ int_e1 + int_e2 + int_e3
+    
+    micro_cot ~ fid_cot
+    micro_floor ~ fid_floor
+    micro_surf ~ fid_surf
+
+    sepsis ~ micro_cot + micro_floor + micro_surf + micro_mat + micro_staff
+    
+    #covariance
+    micro_cot ~~ micro_floor
+    micro_cot ~~ micro_surf
+    micro_floor ~~ micro_surf
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2)
+  
+  #finding the effect size
+  effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3, data = df2)
+  
+  #getting the parameter estimates
+  params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
+    filter(op == "~") %>%
+    unite(param, c("lhs", "op", "rhs"), remove = FALSE) %>%
+    dplyr::select(param, est)
+  
+  #converting them to the right orientation
+  params2 <- t(params$est)
+  colnames(params2) <- params$param
+  
+  #determining whether the simulation would pass the decision rule
+  pass <- case_when(isTRUE((try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.05) &
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.05 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1) |
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.05) &
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.90) |
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.97 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.90))
+                      ~ "Good",
+                    isTRUE((try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"] >= 0.01) &
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.08 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.1) |
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"] <= 0.1 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["srmr"] <= 0.08) &
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.90) |
+                    (try(fitMeasures(ipc_fit), silent = TRUE)["cfi"] >= 0.95 &
+                    try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"] >= 0.90))
+                    ~ "Acceptable",
+                    TRUE ~ "Poor")
+  
+  #extracting data from the model
+  data <- cbind(data.frame(run = x,
+                           chisq = try(fitMeasures(ipc_fit), silent = TRUE)["chisq"],
+                           df = try(fitMeasures(ipc_fit), silent = TRUE)["df"],
+                           pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["pvalue"],
+                           rmsea = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea"], 
+                           rmsea.ci.lower = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.lower"],
+                           rmsea.ci.upper = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.ci.upper"],
+                           rmsea.pvalue = try(fitMeasures(ipc_fit), silent = TRUE)["rmsea.pvalue"],
+                           srmr = try(fitMeasures(ipc_fit), silent = TRUE)["srmr"],
+                           nnfi = try(fitMeasures(ipc_fit), silent = TRUE)["nnfi"],
+                           cfi = try(fitMeasures(ipc_fit), silent = TRUE)["cfi"],
+                           pass = pass,
+                           params2,
+                           effect1 = effect$coefficients[2],
+                           effect2 = effect$coefficients[3],
+                           effect3 = effect$coefficients[4],
+                           effectall = mean(c(effect$coefficients[2], effect$coefficients[3], effect$coefficients[4]))
+  ))
+  rownames(data) <- c()
+  return(data)
+}
+
+
+#this function runs the simulator for different parameters
+data_effects <- runeffect(sem_env_effects)
+
+effects <- data_effects %>%
+  filter(fit_measures == "overall_good") %>%
+  mutate(micro_scale = as.character(micro_scale))
+
+ggplot(data = effects, aes(x = micro_scale, y = mag, fill = prop_passing)) +
+  geom_tile() +
+  facet_grid( ~ sepsis_scale) +
+  scale_fill_viridis_c(option = "C")
+
+```
+
+This chunk of code first calculates what the effect of changes in different variables have on the next layer in the model. The scale of the effect has been manipulated so that we can make a small effect, moderate effect or large effect. 
+
+IPC -> Fidelity
+
+This is the effect of changing one IPC intervention from 0 to 1 on the fidelity of a single domain. 
+
+Small effect: `r small_fid`
+Moderate effect: `r mod_fid`
+Large effect: `r large_fid`
+
+Fidelity -> Micro
+
+This is the effect of improving fidelity in one domain by 10% on the microbiology of that same domain.
+
+Small effect: `r small_micro`
+Moderate effect: `r mod_micro`
+Large effect: `r large_micro`
+
+Micro -> Sepsis
+
+This is the effect of reducing the contamination of one domain by 10% on the proportion of neonates with sepsis. 
+
+Small effect: `r small_sepsis`
+Moderate effect: `r mod_sepsis`
+Large effect: `r large_sepsis` 
 
 
 ### This is improving it by modelling the maternal and hand hygiene as covariant
