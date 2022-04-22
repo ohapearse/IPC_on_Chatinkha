@@ -339,18 +339,17 @@ Need to sort out:
 
 - Sepsis scale is not accurate
 
-
 ## Research questions
 
  1) Do IPC interventions have an effect on sepsis? If so, which ones? And how much? 
       a) Linear regression of IPC interventions on sepsis
  2) Is the cleanliness of specific ward "areas" more closely associated with the risk of sepsis? Is the cleanliness of specific ward "areas" more closely associated with specific IPC interventions? 
-      a) SEM
+      a) SEM with dropping out of different areas
  3) Are measures of IPC fidelity adequate for understanding how well protected babies are from sepsis? 
       a) PGFI/AIC of models including microbiology, fidelity or IPC
  4) Are there specific fidelity or microbiology thresholds we should be aiming for?
       a) Work back from SEM results. Aim for a specific HAI rate then work back to fidelity and microbiology. 
-      
+      b) Linear regression with fitted splines? 
       
 ## Decision rules for accepting models
 
@@ -419,7 +418,6 @@ $$\alpha_s = (\beta_1 m_1 + \beta_2 m_2 ... + \beta_i m_i) \div 2$$
 $$\beta_s = 15 \times n_m - \alpha_s$$
 Where $micro_i$ represents the microbiology results from each of the areas of the ward. The value for $\alpha_s$ is divided by 2 as values below 50% for sepsis are more realistic than values approaching 100%. $n_m$ represents the number of different ward areas. This value is multiplied by 15 to get the theoretical maximum for the microbiology values. The effect of changes in microbiology on sepsis can be altered by changing the value of $\beta_i$.
 
-
 ```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
 #simulating data ----
 sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro_scale = 0.75, sepsis_baseline = 0.5, sepsis_scale = 1){
@@ -484,8 +482,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   micro_floor <- mv_env[2, ]
   micro_surf <- mv_env[3, ]
   #this represents the change in microbiology based on increasing fidelity across one area by 10%
-  change_micro <- 0.1 * (-micro_scale) 
-  #micro_scale <- -(change_micro) / 0.1
+  change_micro <- micro_scale
   #hands
   mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
                      MoreArgs = list(sigma = sigma_2, mv_scale = micro_scale))
@@ -992,7 +989,6 @@ plotter(data_env)
 
 
 ### Question 1: Do IPC interventions have an effect on sepsis? If so which ones? And how much? 
-
 
 We will fit an SEM model as illustrated above. However, alongside this we will also perform a standard linear regression of different IPC measures against sepsis. This will tell us the relationship between such measures and the rates of sepsis. 
 
