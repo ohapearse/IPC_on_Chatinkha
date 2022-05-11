@@ -20,11 +20,11 @@ library(gt)
 
 #this function runs the simulation function a certain number of times and collates the results
 #it should be used for the functions which have the ability to change individual relationships
-sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, sepsis_scale = 0.01, sepsis_baseline = 0.5, micro_scale = 1){
+sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_sepsis = 0.01, sepsis_baseline = 0.5, change_micro = 0.75){
   sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
                                       baseline = baseline, size = size, 
-                                      fid_scale = fid_scale, sepsis_scale = sepsis_scale, 
-                                      sepsis_baseline = 0.5, micro_scale = micro_scale))
+                                      change_fid = change_fid, change_sepsis = change_sepsis, 
+                                      sepsis_baseline = 0.5, change_micro = change_micro))
   sim_mult2 <- lapply(sim_mult, as.numeric)
   fit_mult <- data.frame(
     chisq = c(sum(sim_mult2$chisq < sapply(sim_mult2$df, FUN = prod ,2), na.rm = TRUE) / length(sim_mult2$chisq), 
@@ -56,10 +56,10 @@ sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, fid_
 
 #this function runs the simulation function a certain number of times and collates the results
 #it should be used for functions that do not have the ability to change individual relationships
-sim_sorting <- function(func, reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, sepsis_baseline = 0.5, micro_scale = 1, sepsis_scale = 0.01){
+sim_sorting <- function(func, reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, sepsis_baseline = 0.5, change_micro = 1, change_sepsis = 0.01){
   sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
                                       baseline = baseline, size = size, 
-                                      fid_scale = fid_scale))
+                                      change_fid = change_fid))
   sim_mult2 <- lapply(sim_mult, as.numeric)
   fit_mult <- data.frame(
     chisq = c(sum(sim_mult2$chisq < sapply(sim_mult2$df, FUN = prod ,2), na.rm = TRUE) / length(sim_mult2$chisq), 
@@ -124,8 +124,8 @@ extractor <- function(data){
     all_data <- rbind(all_data, first_data)                
   }
   all_data2 <- all_data %>%
-    separate(name, c("fid_scale", "sample_size"), sep = "_") %>%
-    mutate(fid_scale = as.numeric(substr(fid_scale, 2, nchar(fid_scale))),
+    separate(name, c("change_fid", "sample_size"), sep = "_") %>%
+    mutate(change_fid = as.numeric(substr(change_fid, 2, nchar(change_fid))),
            sample_size = as.numeric(sample_size)) %>%
     pivot_longer(cols = c("chip_good",
                           "chip_acc",
@@ -201,38 +201,38 @@ plotter2 <- function(data){
 runit <- function(func){
   
   #nine months
-  sim_0_39 <- sim_sorting(func = func, reps = 100, fid_scale = 0, size = 39)
-  sim_1_39 <- sim_sorting(func = func, reps = 100, fid_scale = 0.01, size = 39)
-  sim_2_39 <- sim_sorting(func = func, reps = 100, fid_scale = 0.025, size = 39)
-  sim_4_39 <- sim_sorting(func = func, reps = 100, fid_scale = 0.04, size = 39)
-  sim_6_39 <- sim_sorting(func = func, reps = 100, fid_scale = 0.06, size = 39)
-  sim_9_39 <- sim_sorting(func = func, reps = 100, fid_scale = 0.09, size = 39)
+  sim_0_39 <- sim_sorting(func = func, reps = 100, change_fid = 0, size = 39)
+  sim_1_39 <- sim_sorting(func = func, reps = 100, change_fid = 0.01, size = 39)
+  sim_2_39 <- sim_sorting(func = func, reps = 100, change_fid = 0.025, size = 39)
+  sim_4_39 <- sim_sorting(func = func, reps = 100, change_fid = 0.04, size = 39)
+  sim_6_39 <- sim_sorting(func = func, reps = 100, change_fid = 0.06, size = 39)
+  sim_9_39 <- sim_sorting(func = func, reps = 100, change_fid = 0.09, size = 39)
 
   
   #one year
-  sim_0_52 <- sim_sorting(func = func, reps = 100, fid_scale = 0, size = 52)
-  sim_1_52 <- sim_sorting(func = func, reps = 100, fid_scale = 0.01, size = 52)
-  sim_2_52 <- sim_sorting(func = func, reps = 100, fid_scale = 0.025, size = 52)
-  sim_4_52 <- sim_sorting(func = func, reps = 100, fid_scale = 0.04, size = 52)
-  sim_6_52 <- sim_sorting(func = func, reps = 100, fid_scale = 0.06, size = 52)
-  sim_9_52 <- sim_sorting(func = func, reps = 100, fid_scale = 0.09, size = 52)
+  sim_0_52 <- sim_sorting(func = func, reps = 100, change_fid = 0, size = 52)
+  sim_1_52 <- sim_sorting(func = func, reps = 100, change_fid = 0.01, size = 52)
+  sim_2_52 <- sim_sorting(func = func, reps = 100, change_fid = 0.025, size = 52)
+  sim_4_52 <- sim_sorting(func = func, reps = 100, change_fid = 0.04, size = 52)
+  sim_6_52 <- sim_sorting(func = func, reps = 100, change_fid = 0.06, size = 52)
+  sim_9_52 <- sim_sorting(func = func, reps = 100, change_fid = 0.09, size = 52)
 
   #18 months
-  sim_0_78 <- sim_sorting(func = func, reps = 100, fid_scale = 0, size = 78)
-  sim_1_78 <- sim_sorting(func = func, reps = 100, fid_scale = 0.01, size = 78)
-  sim_2_78 <- sim_sorting(func = func, reps = 100, fid_scale = 0.025, size = 78)
-  sim_4_78 <- sim_sorting(func = func, reps = 100, fid_scale = 0.04, size = 78)
-  sim_6_78 <- sim_sorting(func = func, reps = 100, fid_scale = 0.06, size = 78)
-  sim_9_78 <- sim_sorting(func = func, reps = 100, fid_scale = 0.09, size = 78)
+  sim_0_78 <- sim_sorting(func = func, reps = 100, change_fid = 0, size = 78)
+  sim_1_78 <- sim_sorting(func = func, reps = 100, change_fid = 0.01, size = 78)
+  sim_2_78 <- sim_sorting(func = func, reps = 100, change_fid = 0.025, size = 78)
+  sim_4_78 <- sim_sorting(func = func, reps = 100, change_fid = 0.04, size = 78)
+  sim_6_78 <- sim_sorting(func = func, reps = 100, change_fid = 0.06, size = 78)
+  sim_9_78 <- sim_sorting(func = func, reps = 100, change_fid = 0.09, size = 78)
 
 
   #four years
-  sim_0_208 <- sim_sorting(func = func, reps = 100, fid_scale = 0, size = 208)
-  sim_1_208 <- sim_sorting(func = func, reps = 100, fid_scale = 0.01, size = 208)
-  sim_2_208 <- sim_sorting(func = func, reps = 100, fid_scale = 0.025, size = 208)
-  sim_4_208 <- sim_sorting(func = func, reps = 100, fid_scale = 0.04, size = 208)
-  sim_6_208 <- sim_sorting(func = func, reps = 100, fid_scale = 0.06, size = 208)
-  sim_9_208 <- sim_sorting(func = func, reps = 100, fid_scale = 0.09, size = 208)
+  sim_0_208 <- sim_sorting(func = func, reps = 100, change_fid = 0, size = 208)
+  sim_1_208 <- sim_sorting(func = func, reps = 100, change_fid = 0.01, size = 208)
+  sim_2_208 <- sim_sorting(func = func, reps = 100, change_fid = 0.025, size = 208)
+  sim_4_208 <- sim_sorting(func = func, reps = 100, change_fid = 0.04, size = 208)
+  sim_6_208 <- sim_sorting(func = func, reps = 100, change_fid = 0.06, size = 208)
+  sim_9_208 <- sim_sorting(func = func, reps = 100, change_fid = 0.09, size = 208)
 
   sim_data <- list(s0_39 = sim_0_39, 
                  s1_39 = sim_1_39, 
@@ -265,18 +265,18 @@ runit <- function(func){
 #runs a number of different scenarios that mess with the effect sizes and collates the data
 runeffect <- function(func){
   #small effect is 5, mod effect is 10, large effect is 15
- fid_scale <- c(rep(0.05, 9),
+ fid_vect <- c(rep(0.05, 9),
           rep(0.10, 9),
           rep(0.15, 9))
- micro_scale <- rep(c(0.25, 0.25, 0.25,
+ micro_vect <- rep(c(0.25, 0.25, 0.25,
                       0.5, 0.5, 0.5,
                       0.75, 0.75, 0.75), 3)
- sepsis_scale = rep(c(0.005, 0.01, 0.015), 9)
+ sepsis_vect = rep(c(0.005, 0.01, 0.015), 9)
   
  all_runs <- mapply(FUN = sim_sorting_effect, 
-                    fid_scale = fid_scale, 
-                    micro_scale = micro_scale,
-                    sepsis_scale = sepsis_scale,
+                    change_fid = fid_vect, 
+                    change_micro = micro_vect,
+                    change_sepsis = sepsis_vect,
                     MoreArgs = list(reps = 100, size = 52, func = sem_env_effects))
  
   all_data <- data.frame()
@@ -319,7 +319,7 @@ runeffect <- function(func){
                              )
     all_data <- rbind(all_data, first_data)                
   }
-  all_data2 <- cbind(fid_scale, micro_scale, sepsis_scale, all_data)
+  all_data2 <- cbind(fid_vect, micro_vect, sepsis_vect, all_data)
   all_data3 <- all_data2 %>%
     pivot_longer(cols = c("chip_good",
                           "chip_acc",
@@ -341,14 +341,13 @@ runeffect <- function(func){
 }
 
 #setting some defaults
-size = 52; baseline = 0.2; fid_scale = 0.1; micro_scale = 0.75; sepsis_scale = 0.01; sepsis_baseline = 0.5
+size = 52; baseline = 0.2; change_fid = 0.1; change_micro = 0.75; change_sepsis = 0.01; sepsis_baseline = 0.5
   
 ```
 
 Need to sort out:
 
 - Is micro scale accurate?
-- Get rid of scale variable - change it to change
 - Chnage markdown text - fid_scale is out of 10 not out of 100
 - Change it so that alpha + beta can be changed (optional)
 - Change the markdown document - change the xbar to E[Xi], change the x to m
@@ -438,9 +437,9 @@ Where $micro_i$ represents the microbiology results from each of the areas of th
 
 ```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
 #simulating data ----
-sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro_scale = 0.75, sepsis_baseline = 0.5, sepsis_scale = 0.01){
+sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.75, sepsis_baseline = 0.5, change_sepsis = 0.01){
   
-  mv_2 <- function(x, y, sigma = sigma_2, mv_scale = micro_scale, ...){
+  mv_2 <- function(x, y, sigma = sigma_2, mv_scale = change_micro, ...){
     mv_scale <- 15 * mv_scale
     param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale), sigma = sigma_2) 
     #param <- round(param)
@@ -451,7 +450,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   sigma_2 <- matrix(c(1, 0.5, 
                       0.5, 1), ncol = 2)
   
-  mv_3 <- function(x, y, z, sigma = sigma_3, mv_scale = micro_scale, ...){
+  mv_3 <- function(x, y, z, sigma = sigma_3, mv_scale = change_micro, ...){
     mv_scale <- 15 * mv_scale
     param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale, 
                                      15 - z * mv_scale), sigma = sigma_3)
@@ -470,7 +469,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
   int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
   int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
-  alpha_hands <- ((int_h1 + int_h2 + int_h3) * fid_scale + baseline) * 10
+  alpha_hands <- ((int_h1 + int_h2 + int_h3) * change_fid + baseline) * 10
   alpha_hands[alpha_hands<0] <- 0
   alpha_hands[alpha_hands>10] <- 10
   beta_hands <- 10 - alpha_hands
@@ -478,12 +477,11 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
   int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
   int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
-  alpha_env <- ((int_e1 + int_e2 + int_e3) * fid_scale + baseline) * 10
+  alpha_env <- ((int_e1 + int_e2 + int_e3) * change_fid + baseline) * 10
   alpha_env[alpha_env<0] <- 0
   alpha_env[alpha_env>10] <- 10
   beta_env <- 10 - alpha_env
-  #this represents the average change in fidelity based on turning an intervention on or off
-  change_fid <- fid_scale
+
   #simulating fidelity of intervention
   #overall environmental
   fid_cot <- rbeta(size, alpha_env, beta_env)
@@ -495,15 +493,15 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   #microbiology
   #environmental
   mv_env <- mapply(FUN = mv_3, x = fid_cot, y = fid_floor, 
-                   z = fid_surf, MoreArgs = list(sigma = sigma_3, mv_scale = micro_scale))
+                   z = fid_surf, MoreArgs = list(sigma = sigma_3, mv_scale = change_micro))
   micro_cot <- mv_env[1, ]
   micro_floor <- mv_env[2, ]
   micro_surf <- mv_env[3, ]
   #this represents the change in microbiology based on increasing fidelity across one area by 10%
-  change_micro <- micro_scale
+  change_micro <- change_micro
   #hands
   mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
-                     MoreArgs = list(sigma = sigma_2, mv_scale = micro_scale))
+                     MoreArgs = list(sigma = sigma_2, mv_scale = change_micro))
   micro_staff <- mv_hands[1, ]
   micro_mat <- mv_hands[2, ]
   #sepsis
@@ -517,7 +515,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   #change in micro relative to baseline
   microD <- max_micro - all_micro
   #delta
-  delta <- sepsis_scale * microD
+  delta <- change_sepsis * microD
   #alpha to use
   alpha_sepsis <- alpha0 - (alpha0 + beta0) * delta
   alpha_sepsis[alpha_sepsis < 0] <- 0
@@ -526,8 +524,6 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   beta_sepsis[beta_sepsis < 0] <- 0
   #sepsis
   sepsis <- rbeta(size, alpha_sepsis, beta_sepsis)
-  #change in sepsis
-  change_sepsis <- sepsis_scale
   
   #creating data frame
   df_ipc <- data.frame(
@@ -644,13 +640,13 @@ data_effects <- runeffect(sem_env_effects)
 
 effects <- data_effects %>%
   filter(fit_measures == "overall_good") %>%
-  mutate(micro_scale = as.character(micro_scale)) %>%
+  mutate(change_micro = as.character(change_micro)) %>%
   mutate(change_fid = 100 * change_fid,
          change_sepsis = change_sepsis)
 
 effects_acc <- data_effects %>%
   filter(fit_measures == "overall_acceptable") %>%
-  mutate(micro_scale = as.character(micro_scale))
+  mutate(change_micro = as.character(change_micro))
 
 ggplot(data = effects, aes(x = change_micro, y = change_fid, fill = prop_passing)) +
   geom_tile() +
@@ -675,9 +671,9 @@ The effect of changing microbiology on sepsis (facets) represents the % change i
 
 ```{r time series, echo = FALSE, warning = FALSE}
 
-sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, micro_scale = 0.5, sepsis_scale = 0.01, sepsis_baseline = 0.5){
+sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.5, change_sepsis = 0.01, sepsis_baseline = 0.5){
   
-  mv_2 <- function(x, y, sigma = sigma_2, mv_scale = micro_scale, ...){
+  mv_2 <- function(x, y, sigma = sigma_2, mv_scale = change_micro, ...){
     mv_scale <- 15 * mv_scale
     param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale), sigma = sigma_2) 
     #param <- round(param)
@@ -688,7 +684,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   sigma_2 <- matrix(c(1, 0.5, 
                       0.5, 1), ncol = 2)
   
-  mv_3 <- function(x, y, z, sigma = sigma_3, mv_scale = micro_scale, ...){
+  mv_3 <- function(x, y, z, sigma = sigma_3, mv_scale = change_micro, ...){
     mv_scale <- 15 * mv_scale
     param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale, 
                                      15 - z * mv_scale), sigma = sigma_3)
@@ -720,7 +716,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
   int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
   int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
-  alpha_hands <- ((int_h1 + int_h2 + int_h3) * fid_scale + baseline) * 10
+  alpha_hands <- ((int_h1 + int_h2 + int_h3) * change_fid + baseline) * 10
   alpha_hands[alpha_hands<0] <- 0
   alpha_hands[alpha_hands>10] <- 10
   beta_hands <- 10 - alpha_hands
@@ -728,12 +724,12 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
   int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
   int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
-  alpha_env <- ((int_e1 + int_e2 + int_e3) * fid_scale + baseline) * 10
+  alpha_env <- ((int_e1 + int_e2 + int_e3) * change_fid + baseline) * 10
   alpha_env[alpha_env<0] <- 0
   alpha_env[alpha_env>10] <- 10
   beta_env <- 10 - alpha_env
   #this represents the average change in fidelity based on turning an intervention on or off
-  change_fid <- fid_scale
+  change_fid <- change_fid
   #simulating fidelity of intervention
   #overall environmental
   fid_cot <- rbeta(size, alpha_env, beta_env)
@@ -745,15 +741,15 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   #microbiology
   #environmental
   mv_env <- mapply(FUN = mv_3, x = fid_cot, y = fid_floor, 
-                   z = fid_surf, MoreArgs = list(sigma = sigma_3, mv_scale = micro_scale))
+                   z = fid_surf, MoreArgs = list(sigma = sigma_3, mv_scale = change_micro))
   micro_cot <- mv_env[1, ]
   micro_floor <- mv_env[2, ]
   micro_surf <- mv_env[3, ]
   #this represents the change in microbiology based on increasing fidelity across one area by 10%
-  change_micro <- micro_scale
+  change_micro <- change_micro
   #hands
   mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
-                     MoreArgs = list(sigma = sigma_2, mv_scale = micro_scale))
+                     MoreArgs = list(sigma = sigma_2, mv_scale = change_micro))
   micro_staff <- mv_hands[1, ]
   micro_mat <- mv_hands[2, ]
   #sepsis
@@ -767,7 +763,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   #change in micro relative to baseline
   microD <- max_micro - all_micro
   #delta
-  delta <- sepsis_scale * microD
+  delta <- change_sepsis * microD
   #alpha to use
   alpha_sepsis <- alpha0 - (alpha0 + beta0) * delta
   alpha_sepsis[alpha_sepsis < 0] <- 0
@@ -776,8 +772,6 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   beta_sepsis[beta_sepsis < 0] <- 0
   #sepsis
   sepsis <- rbeta(size, alpha_sepsis, beta_sepsis)
-  #change in sepsis
-  change_sepsis <- sepsis_scale
   
   #creating data frame
   df_ipc <- data.frame(
