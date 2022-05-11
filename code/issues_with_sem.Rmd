@@ -348,10 +348,7 @@ size = 52; baseline = 0.2; change_fid = 0.1; change_micro = 0.75; change_sepsis 
 Need to sort out:
 
 - Is micro scale accurate?
-- Chnage markdown text - fid_scale is out of 10 not out of 100
 - Change it so that alpha + beta can be changed (optional)
-- Change the markdown document - change the xbar to E[Xi], change the x to m
-- Go through the markdown stuff and make sure that it all makes sense - in some cases it should be simplified
 - Put a floor on sepsis - so that it is limited to approx 5% for example
 - Add comments to the code
 - Go through all the questions and model them
@@ -405,35 +402,38 @@ However, some investigators use less stringent metrics.
 
 There are 3 layers of effect. 
 
+C = change
+
 1) IPC interventions on fidelity
 
-The effect of IPC interventions on fidelity were simulated by an $rbeta$ distribution, with the following parameters. 
+The effect of IPC interventions on fidelity were simulated by an $rbeta$ distribution. 
 
-The mean of random values for rbeta distribution is calculated by:
+The mean of the rbeta distribution for any given values of $\alpha$ and $\beta$ is calculated by:
 
-$$\bar{x} = \frac{\alpha}{\alpha + \beta}$$
+$$E[X_{fid}] = \frac{\alpha_{fid}}{\alpha_{fid} + \beta_{fid}}$$
 
-$\beta$ was calculated as $100 - \alpha$. The mean effect size for the effect of the IPC intervention on fidelity is calculated by: 
+$\alpha$ is a vector of numbers, calculated by the following equation. 
 
-$$\bar{x}_{effect} = \frac{\alpha_1}{\alpha_1 + \beta_1} - \frac{\alpha_2}{\alpha_2 + \beta_2}$$
-
-Where $\alpha_1 = 1 \times scale_f + baseline$ and $\beta = 100 - \alpha$ and represents the situation in which an IPC intervention is "on". $\alpha_2 = 0 \times scale + baseline$ and $\beta_2 = 100 - \alpha_2$ represents the situation in which it is "off". The effect of the interventions on fidelity can be altered by changing the value of $scale_f$. 
-
+$$ \alpha_i = 10(C_{fid}(int_{1i} + int_{2i} + int_{3i}) + B_{fid})  $$
+Where $C_{fid}$ represents the desired change in fidelity from changing an intervention from the 0 to 1 state (off to on) and $B_{fid}$ represents the pre-specified baseline fidelity. $int_{xi}$ represent vectors representing whether each interventions is in the on or off state. $\beta_{fid}$ is calculated as $10 - \alpha_{fid}$. 
 
 2) Fidelity on microbiology
 
-The effect of changes in fidelity on microbiology is simulated as a $multivariate \hspace{0.2cm}normal$ with the following parameters contributing to the means of the multivariate distribution. The equation below is repeated for each microbiological "area". The value for each area is then calculated using the $multivariate \hspace{0.2cm}normal\hspace{0.2cm}distribution$
+The effect of changes in fidelity on microbiology is simulated as a $multivariate \hspace{0.2cm}normal$ distribution with the following parameters describing the means of the distribution. The equation below is repeated for each microbiological "area". The value for each area is then calculated using the $multivariate \hspace{0.2cm}normal$ distribution.
 
-$$\bar{x_i} = \alpha_i -\beta_{mi}f_i $$
-$\alpha_1$ represents the maximum value for the microbiology, and is set at 15, which is the approximate value for the highest $log(m)$ values that we are likely to find. The effect of changes in fidelity can be altered by changing the value of $\beta_{mi}$. The variance/covariance matrix $(\sigma)$ is set so that the diagonals are  1 and the off-diagonals are 0.5. 
+$$E[X_{mic}] = \alpha_{mic} -\beta_{mic}f_{mic} $$
+$\alpha_{mic$ represents the maximum value for the microbiology, and is set at 15, which is the approximate value for the highest $log(m)$ values that we are likely to find. The effect of changes in fidelity can be altered by changing the value of $\beta_{mic}$. The variance/covariance matrix $(\sigma)$ is set so that the diagonals are  1 and the off-diagonals are 0.5. 
 
 3) Microbiology on sepsis
 
-This is also simulated using an $rbeta$ distribution. For this the $\alpha$ and $\beta$ are calculated as: 
+This is also simulated using an $rbeta$ distribution where $\alpha_{sep}$ and $\beta_{sep}$ are defined as:
 
-$$\alpha_s = (\beta_1 m_1 + \beta_2 m_2 ... + \beta_i m_i) \div 2$$
-$$\beta_s = 15 \times n_m - \alpha_s$$
-Where $micro_i$ represents the microbiology results from each of the areas of the ward. The value for $\alpha_s$ is divided by 2 as values below 50% for sepsis are more realistic than values approaching 100%. $n_m$ represents the number of different ward areas. This value is multiplied by 15 to get the theoretical maximum for the microbiology values. The effect of changes in microbiology on sepsis can be altered by changing the value of $\beta_i$.
+$$\alpha_{sep} = \alpha_0 - (\alpha_0 + \beta_0) \times  \delta $$
+$$\beta_{sep} = \beta_0 + (\alpha_0 + \beta_0) \times \delta $$
+Where $ \delta = C_{sep} \times D_{mic}$, $ \alpha_0 = B_{sep} \times 100$ and $ \beta_0 = 100 - \alpha_0 $. 
+
+$D_{mic}$ is a vector represented by $max_{mic} - micro_i$ where $micro_i$ is a vector of all microbiology values for every area combined by addition and $max_{mic}$ is the largest value of $micro_i$. $C_{sep}$ represents the desired change in the proportion of neonates with sepsis from a 1 log drop in all microbiology parameters, and $B_{sep}$ represents the pre-specified baseline level of sepsis. 
+
 
 ```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
 #simulating data ----
