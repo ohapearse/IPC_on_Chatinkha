@@ -11,13 +11,16 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r start, echo = FALSE, warning = FALSE, message = FALSE}
 
+#downloading packages
 library(tidyverse)
 library(lavaan)
 library(mvtnorm)
 library(here)
 library(gt)
 
-sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, sepsis_scale = 1, sepsis_baseline = 0.5, micro_scale = 1){
+#this function runs the simulation function a certain number of times and collates the results
+#it should be used for the functions which have the ability to change individual relationships
+sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, sepsis_scale = 0.01, sepsis_baseline = 0.5, micro_scale = 1){
   sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
                                       baseline = baseline, size = size, 
                                       fid_scale = fid_scale, sepsis_scale = sepsis_scale, 
@@ -51,7 +54,9 @@ sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, fid_
   return(fit_mult)
 }
 
-sim_sorting <- function(func, reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, sepsis_baseline = 0.5, micro_scale = 1, sepsis_scale = 1){
+#this function runs the simulation function a certain number of times and collates the results
+#it should be used for functions that do not have the ability to change individual relationships
+sim_sorting <- function(func, reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, sepsis_baseline = 0.5, micro_scale = 1, sepsis_scale = 0.01){
   sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
                                       baseline = baseline, size = size, 
                                       fid_scale = fid_scale))
@@ -83,7 +88,7 @@ sim_sorting <- function(func, reps = 100, size = 52, baseline = 0.2, fid_scale =
   return(fit_mult)
 }
 
-
+#takes the data from a list of outputs from sim_sorting and extracts the relevant datapoints
 extractor <- function(data){
   all_data <- data.frame()
   for (i in 1:length(data)){
@@ -141,6 +146,7 @@ extractor <- function(data){
   return(all_data2)
 }
 
+#plots extracted data
 plotter <- function(data){
   ggplot(data = data, aes(x = effect, y = prop_passing, colour = sample_size)) +
     geom_point(position = position_jitter(width = 0.05, height = 0.05)) +
@@ -165,6 +171,7 @@ plotter <- function(data){
                           name = "Sample size (weeks)")
 }
 
+#plots extracted data
 plotter2 <- function(data){
   ggplot(data = data, aes(x = sample_size, y = prop_passing)) +
     geom_point() +
@@ -189,6 +196,8 @@ plotter2 <- function(data){
                           name = "Sample size (weeks)")
 }
 
+#runs a number of simulations for different scenarios and turns the data into
+#a list
 runit <- function(func){
   
   #nine months
@@ -253,15 +262,16 @@ runit <- function(func){
   return(sim_data)
 }
 
+#runs a number of different scenarios that mess with the effect sizes and collates the data
 runeffect <- function(func){
   #small effect is 5, mod effect is 10, large effect is 15
  fid_scale <- c(rep(0.05, 9),
           rep(0.10, 9),
           rep(0.15, 9))
- micro_scale <- rep(c(0.5, 0.5, 0.5,
-                      0.75, 0.75, 0.75,
-                      1, 1, 1), 3)
- sepsis_scale = rep(c(0.9, 1, 1.1), 9)
+ micro_scale <- rep(c(0.25, 0.25, 0.25,
+                      0.5, 0.5, 0.5,
+                      0.75, 0.75, 0.75), 3)
+ sepsis_scale = rep(c(0.005, 0.01, 0.015), 9)
   
  all_runs <- mapply(FUN = sim_sorting_effect, 
                     fid_scale = fid_scale, 
@@ -331,13 +341,21 @@ runeffect <- function(func){
 }
 
 #setting some defaults
-size = 52; baseline = 0.2; fid_scale = 0.1; micro_scale = 0.75; sepsis_scale = 1; sepsis_baseline = 0.5
+size = 52; baseline = 0.2; fid_scale = 0.1; micro_scale = 0.75; sepsis_scale = 0.01; sepsis_baseline = 0.5
   
 ```
 
 Need to sort out:
 
-- Sepsis scale is not accurate
+- Is micro scale accurate?
+- Get rid of scale variable - change it to change
+- Chnage markdown text - fid_scale is out of 10 not out of 100
+- Change it so that alpha + beta can be changed (optional)
+- Change the markdown document - change the xbar to E[Xi], change the x to m
+- Go through the markdown stuff and make sure that it all makes sense - in some cases it should be simplified
+- Put a floor on sepsis - so that it is limited to approx 5% for example
+- Add comments to the code
+- Go through all the questions and model them
 
 ## Research questions
 
@@ -420,7 +438,7 @@ Where $micro_i$ represents the microbiology results from each of the areas of th
 
 ```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
 #simulating data ----
-sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro_scale = 0.75, sepsis_baseline = 0.5, sepsis_scale = 1){
+sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro_scale = 0.75, sepsis_baseline = 0.5, sepsis_scale = 0.01){
   
   mv_2 <- function(x, y, sigma = sigma_2, mv_scale = micro_scale, ...){
     mv_scale <- 15 * mv_scale
@@ -492,17 +510,25 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, fid_scale = 0.1, micro
   #this allows sepsis to be scaled and a baseline decided upon
   all_micro <- micro_cot + micro_floor + micro_surf + micro_staff + micro_mat
   max_micro <- max(all_micro)
-  baseline_level <- max_micro / sepsis_baseline
-  alpha_sepsis <- max_micro - ((max_micro - all_micro) * sepsis_scale)
-  beta_sepsis <- baseline_level - alpha_sepsis
-  alpha_sepsis[alpha_sepsis>baseline_level] <- baseline_level
-  alpha_sepsis[alpha_sepsis<0] <- 0
-  beta_sepsis[beta_sepsis<0] <- 0
+  #baseline alpha
+  alpha0 <- sepsis_baseline * 100
+  #baseline beta
+  beta0 <- 100 - alpha0
+  #change in micro relative to baseline
+  microD <- max_micro - all_micro
+  #delta
+  delta <- sepsis_scale * microD
+  #alpha to use
+  alpha_sepsis <- alpha0 - (alpha0 + beta0) * delta
+  alpha_sepsis[alpha_sepsis < 0] <- 0
+  #beta to use
+  beta_sepsis <- beta0 + (alpha0 + beta0) * delta
+  beta_sepsis[beta_sepsis < 0] <- 0
+  #sepsis
   sepsis <- rbeta(size, alpha_sepsis, beta_sepsis)
+  #change in sepsis
   change_sepsis <- sepsis_scale
-  #this represents the average change in sepsis based on a decrease in microbiology of 2 log in all areas
-  #change_sepsis <- sepsis_scale/(2*max) 
-  #sepsis_scale <- change_sepsis * 2 * max
+  
   #creating data frame
   df_ipc <- data.frame(
     #weeks = weeks,
@@ -649,7 +675,7 @@ The effect of changing microbiology on sepsis (facets) represents the % change i
 
 ```{r time series, echo = FALSE, warning = FALSE}
 
-sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, micro_scale = 0.75, sepsis_scale = 1, sepsis_baseline = 0.5){
+sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.1, micro_scale = 0.5, sepsis_scale = 0.01, sepsis_baseline = 0.5){
   
   mv_2 <- function(x, y, sigma = sigma_2, mv_scale = micro_scale, ...){
     mv_scale <- 15 * mv_scale
@@ -687,10 +713,10 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   sepsis_all <- data.frame()
   for(i in 1:reps){
     #simulating time
-    weeks <- seq(1:size)
-    #simulating interventions
-    #hands
-    #hands
+      #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  #hands
   int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
   int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
   int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
@@ -724,8 +750,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   micro_floor <- mv_env[2, ]
   micro_surf <- mv_env[3, ]
   #this represents the change in microbiology based on increasing fidelity across one area by 10%
-  change_micro <- 0.1 * (-micro_scale) 
-  #micro_scale <- -(change_micro) / 0.1
+  change_micro <- micro_scale
   #hands
   mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
                      MoreArgs = list(sigma = sigma_2, mv_scale = micro_scale))
@@ -735,17 +760,25 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   #this allows sepsis to be scaled and a baseline decided upon
   all_micro <- micro_cot + micro_floor + micro_surf + micro_staff + micro_mat
   max_micro <- max(all_micro)
-  baseline_level <- max_micro / sepsis_baseline
-  alpha_sepsis <- (max_micro - ((max_micro - all_micro) * sepsis_scale))
-  beta_sepsis <- (baseline_level - alpha_sepsis)
-  alpha_sepsis[alpha_sepsis>baseline_level] <- baseline_level
-  alpha_sepsis[alpha_sepsis<0] <- 0
-  beta_sepsis[beta_sepsis<0] <- 0
+  #baseline alpha
+  alpha0 <- sepsis_baseline * 100
+  #baseline beta
+  beta0 <- 100 - alpha0
+  #change in micro relative to baseline
+  microD <- max_micro - all_micro
+  #delta
+  delta <- sepsis_scale * microD
+  #alpha to use
+  alpha_sepsis <- alpha0 - (alpha0 + beta0) * delta
+  alpha_sepsis[alpha_sepsis < 0] <- 0
+  #beta to use
+  beta_sepsis <- beta0 + (alpha0 + beta0) * delta
+  beta_sepsis[beta_sepsis < 0] <- 0
+  #sepsis
   sepsis <- rbeta(size, alpha_sepsis, beta_sepsis)
+  #change in sepsis
   change_sepsis <- sepsis_scale
-  #this represents the average change in sepsis based on a decrease in microbiology of 2 log in all areas
-  #change_sepsis <- sepsis_scale/(2*max) 
-  #sepsis_scale <- change_sepsis * 2 * max
+  
   #creating data frame
   df_ipc <- data.frame(
     #weeks = weeks,
@@ -785,6 +818,12 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
   microcot_stats2 <- as.data.frame(t(microcot_stats)) / 15
   sepsis_stats <- sapply(sepsis_all, FUN = quantile)
   sepsis_stats2 <- as.data.frame(t(sepsis_stats))
+  interventions <- c(Position(function(x) x > 0, int_h1),
+                     Position(function(x) x > 0, int_h2),
+                     Position(function(x) x > 0, int_h3),
+                     Position(function(x) x > 0, int_e1),
+                     Position(function(x) x > 0, int_e2),
+                     Position(function(x) x > 0, int_e3))
   ggplot() + 
     geom_line(data = fidcot_stats2, aes(y = `50%`, x = seq(1:52)), colour = "black") + 
     geom_ribbon(data = fidcot_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "black") + 
@@ -792,6 +831,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, fid_scale = 0.
     geom_ribbon(data = microcot_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "blue") +
     geom_line(data = sepsis_stats2, aes(y = `50%`, x = seq(1:52)), colour = "red") + 
     geom_ribbon(data = sepsis_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "red") +
+    geom_vline(xintercept = interventions) +
     scale_y_continuous(name = "Proportion fidelity of cleanliness and neonates with sepsis", limits = c(0, 1),
                        sec.axis = sec_axis(trans=~.*15, name = "Microbiology"))
 }
@@ -1673,4 +1713,8 @@ plotter2(data_mis)
 ### Notes
 
  - Can't have covariance relationship between micro_mat and micro_staff as theses are exogenous variables and lavaan is unable to estimate the covariance relationship between them. Can either leave that relationship out or use fixed.x = FALSE
+ - If linear regression of covariates against outcome has autocorrelation after accounting for the covariates (eg some time trends), then splines for time trends will need to be added to account for this, as variables are supposed to be independent conditioning on explanatory variables
+ - Think about modelling time dependent decay
+      - Model time dependent decay in the simulations
+      - In the analysis can look at time since intervention - an asymptotic or linear decay function to see how quickly the effects of interventions decay
 
