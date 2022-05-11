@@ -497,8 +497,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, chan
   micro_cot <- mv_env[1, ]
   micro_floor <- mv_env[2, ]
   micro_surf <- mv_env[3, ]
-  #this represents the change in microbiology based on increasing fidelity across one area by 10%
-  change_micro <- change_micro
+
   #hands
   mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
                      MoreArgs = list(sigma = sigma_2, mv_scale = change_micro))
@@ -728,8 +727,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, change_fid = 0
   alpha_env[alpha_env<0] <- 0
   alpha_env[alpha_env>10] <- 10
   beta_env <- 10 - alpha_env
-  #this represents the average change in fidelity based on turning an intervention on or off
-  change_fid <- change_fid
+
   #simulating fidelity of intervention
   #overall environmental
   fid_cot <- rbeta(size, alpha_env, beta_env)
@@ -745,8 +743,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, change_fid = 0
   micro_cot <- mv_env[1, ]
   micro_floor <- mv_env[2, ]
   micro_surf <- mv_env[3, ]
-  #this represents the change in microbiology based on increasing fidelity across one area by 10%
-  change_micro <- change_micro
+
   #hands
   mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
                      MoreArgs = list(sigma = sigma_2, mv_scale = change_micro))
