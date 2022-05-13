@@ -20,11 +20,11 @@ library(gt)
 
 #this function runs the simulation function a certain number of times and collates the results
 #it should be used for the functions which have the ability to change individual relationships
-sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_sepsis = 0.01, sepsis_baseline = 0.5, change_micro = 0.75){
+sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_sepsis = 0.01, sepsis_baseline = 0.5, change_micro = 0.5){
   sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
                                       baseline = baseline, size = size, 
                                       change_fid = change_fid, change_sepsis = change_sepsis, 
-                                      sepsis_baseline = 0.5, change_micro = change_micro))
+                                      sepsis_baseline = sepsis_baseline, change_micro = change_micro))
   sim_mult2 <- lapply(sim_mult, as.numeric)
   fit_mult <- data.frame(
     chisq = c(sum(sim_mult2$chisq < sapply(sim_mult2$df, FUN = prod ,2), na.rm = TRUE) / length(sim_mult2$chisq), 
@@ -48,11 +48,43 @@ sim_sorting_effect <- function(func, reps = 100, size = 52, baseline = 0.2, chan
     change_fid = c(mean(sim_mult2$change_fid), mean(sim_mult2$change_fid)),
     change_micro = c(mean(sim_mult2$change_micro), mean(sim_mult2$change_micro)), 
     change_sepsis = c(mean(sim_mult2$change_sepsis), mean(sim_mult2$change_sepsis)),
-    sample_size = c(size, size)
+    sample_size = c(size, size),
+    effect1 = c(mean(sim_mult2$effect1),
+                mean(sim_mult2$effect1)),
+    effect2 = c(mean(sim_mult2$effect2),
+                mean(sim_mult2$effect2)),
+    effect3 = c(mean(sim_mult2$effect3),
+                mean(sim_mult2$effect3))
+    
   )
   rownames(fit_mult) <- c("good", "acceptable")
   return(fit_mult)
 }
+
+#repeating the simulation - for linear regression
+sim_sorting_reg <- function(func, reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_sepsis = 0.01, sepsis_baseline = 0.5, change_micro = 0.5, e1_mult = 1, e2_mult = 1, e3_mult = 1){
+  sim_mult <- do.call("rbind", lapply(X = seq(1:reps), FUN = func, 
+                                      baseline = baseline, size = size, 
+                                      change_fid = change_fid, change_sepsis = change_sepsis, 
+                                      sepsis_baseline = sepsis_baseline, change_micro = change_micro,
+                                      e1_mult = e1_mult, e2_mult = e2_mult, e3_mult = e3_mult))
+  sim_mult2 <- as.list(sim_mult)
+  sim_mult3 <- sim_mult2[,1]
+  all_data <- c()
+  for(i in 1:length(sim_mult3)){
+    effect1 <- sim_mult3[[i]][2]
+    effect2 <- sim_mult3[[i]][3]
+    effect3 <- sim_mult3[[i]][4]
+    first_data <- data.frame(effect1 = effect1,
+                             effect2 = effect2,
+                             effect3 = effect3)
+    all_data <- rbind(all_data, first_data)
+  }
+  #sim_mult2 <- lapply(sim_mult, as.numeric)
+  result <- colMeans(all_data)
+  return(result)
+}
+
 
 #this function runs the simulation function a certain number of times and collates the results
 #it should be used for functions that do not have the ability to change individual relationships
@@ -349,8 +381,6 @@ Need to sort out:
 
 - Is micro scale accurate?
 - Change it so that alpha + beta can be changed (optional)
-- Put a floor on sepsis - so that it is limited to approx 5% for example
-- Add comments to the code
 - Go through all the questions and model them
 
 ## Research questions
@@ -437,8 +467,10 @@ $D_{mic}$ is a vector represented by $max_{mic} - micro_i$ where $micro_i$ is a 
 
 ```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
 #simulating data ----
-sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.75, sepsis_baseline = 0.5, change_sepsis = 0.01){
-  
+#this simulation simulates a simple situation, focussing on environmental cleanliness
+#it also allows to edit the effects of each layer on the next
+sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.5, sepsis_baseline = 0.5, change_sepsis = 0.01){
+  # this function simulates hand hygiene using multivariate normal dist
   mv_2 <- function(x, y, sigma = sigma_2, mv_scale = change_micro, ...){
     mv_scale <- 15 * mv_scale
     param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale), sigma = sigma_2) 
@@ -450,6 +482,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, chan
   sigma_2 <- matrix(c(1, 0.5, 
                       0.5, 1), ncol = 2)
   
+  #this function simulates environmental hygiene using multivariates normal dist
   mv_3 <- function(x, y, z, sigma = sigma_3, mv_scale = change_micro, ...){
     mv_scale <- 15 * mv_scale
     param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale, 
@@ -458,6 +491,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, chan
     return(param)
   }
   
+  #covariance matrix
     sigma_3 <- matrix(c(1, 0.5, 0.5, 
                         0.5, 1, 0.5, 
                         0.5, 0.5, 1), ncol = 3)
@@ -521,6 +555,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, chan
   #beta to use
   beta_sepsis <- beta0 + (alpha0 + beta0) * delta
   beta_sepsis[beta_sepsis < 0] <- 0
+  alpha_sepsis[(alpha_sepsis / (alpha_sepsis + beta_sepsis)) < 0.02] <- 2
   #sepsis
   sepsis <- rbeta(size, alpha_sepsis, beta_sepsis)
   
@@ -572,7 +607,7 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, chan
   ipc_fit <- sem(ipc_model, data = df2)
   
   #finding the effect size
-  effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3, data = df2)
+  effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3 + int_h1 + int_h2 + int_h3, data = df2)
   
   #getting the parameter estimates
   params <- try(parameterEstimates(ipc_fit), silent = TRUE) %>%
@@ -637,16 +672,18 @@ sem_env_effects <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, chan
 #this function runs the simulator for different parameters
 data_effects <- runeffect(sem_env_effects)
 
+#editing the data a little
 effects <- data_effects %>%
   filter(fit_measures == "overall_good") %>%
   mutate(change_micro = as.character(change_micro)) %>%
   mutate(change_fid = 100 * change_fid,
          change_sepsis = change_sepsis)
-
+#editing the data
 effects_acc <- data_effects %>%
   filter(fit_measures == "overall_acceptable") %>%
   mutate(change_micro = as.character(change_micro))
 
+#plots a heatmap of the different scenarios
 ggplot(data = effects, aes(x = change_micro, y = change_fid, fill = prop_passing)) +
   geom_tile() +
   facet_grid( ~ change_sepsis) +
@@ -655,6 +692,7 @@ ggplot(data = effects, aes(x = change_micro, y = change_fid, fill = prop_passing
   ylab("Effect of changing intervention on fidelity") +
   xlab("Effect of changing fidelity on microbiology")
 
+#plots the parameters 
 plotter(data_effects)
 
 
@@ -670,6 +708,7 @@ The effect of changing microbiology on sepsis (facets) represents the % change i
 
 ```{r time series, echo = FALSE, warning = FALSE}
 
+#this function repeats the simulation a certain number of times and then plots it
 sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.5, change_sepsis = 0.01, sepsis_baseline = 0.5){
   
   mv_2 <- function(x, y, sigma = sigma_2, mv_scale = change_micro, ...){
@@ -828,8 +867,7 @@ sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, change_fid = 0
 }
 
 sim_timeseries(reps = 1000)
-  
-  
+
 ```
 
 This time series illustrates how the data that we are simulating looks. 
@@ -1023,6 +1061,167 @@ plotter(data_env)
 
 We will fit an SEM model as illustrated above. However, alongside this we will also perform a standard linear regression of different IPC measures against sepsis. This will tell us the relationship between such measures and the rates of sepsis. 
 
+```{r question 1, echo = FALSE, warning = FALSE, message = FALSE, eval = FALSE}
+
+#this simulates data and outputs the linear regression model 
+#the effects of the interventions can be edited
+q1_reg <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.5, sepsis_baseline = 0.5, change_sepsis = 0.01, e1_mult = 1, e2_mult = 1, e3_mult = 1){
+  # this function simulates hand hygiene using multivariate normal dist
+  mv_2 <- function(x, y, sigma = sigma_2, mv_scale = change_micro, ...){
+    mv_scale <- 15 * mv_scale
+    param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale), sigma = sigma_2) 
+    #param <- round(param)
+    return(param)
+  }
+  
+  #covariance matrix
+  sigma_2 <- matrix(c(1, 0.5, 
+                      0.5, 1), ncol = 2)
+  
+  #this function simulates environmental hygiene using multivariates normal dist
+  mv_3 <- function(x, y, z, sigma = sigma_3, mv_scale = change_micro, ...){
+    mv_scale <- 15 * mv_scale
+    param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale, 
+                                     15 - z * mv_scale), sigma = sigma_3)
+    #param <- round(param)
+    return(param)
+  }
+  
+  #covariance matrix
+    sigma_3 <- matrix(c(1, 0.5, 0.5, 
+                        0.5, 1, 0.5, 
+                        0.5, 0.5, 1), ncol = 3)
+  
+  #simulating time
+  weeks <- seq(1:size)
+  #simulating interventions
+  #hands
+  int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
+  int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
+  int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
+  alpha_hands <- ((int_h1 + int_h2 + int_h3) * change_fid + baseline) * 10
+  alpha_hands[alpha_hands<0] <- 0
+  alpha_hands[alpha_hands>10] <- 10
+  beta_hands <- 10 - alpha_hands
+  #environment
+  int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
+  int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
+  int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
+  alpha_env <- ((int_e1 * e1_mult + int_e2 * e2_mult + int_e3 * e3_mult) * change_fid + baseline) * 10
+  alpha_env[alpha_env<0] <- 0
+  alpha_env[alpha_env>10] <- 10
+  beta_env <- 10 - alpha_env
+
+  #simulating fidelity of intervention
+  #overall environmental
+  fid_cot <- rbeta(size, alpha_env, beta_env)
+  fid_floor <- rbeta(size, alpha_env, beta_env)
+  fid_surf <- rbeta(size, alpha_env, beta_env)
+  #hands
+  fid_mat <- rbeta(size, alpha_hands, beta_hands)
+  fid_staff <- rbeta(size, alpha_hands, beta_hands)
+  #microbiology
+  #environmental
+  mv_env <- mapply(FUN = mv_3, x = fid_cot, y = fid_floor, 
+                   z = fid_surf, MoreArgs = list(sigma = sigma_3, mv_scale = change_micro))
+  micro_cot <- mv_env[1, ]
+  micro_floor <- mv_env[2, ]
+  micro_surf <- mv_env[3, ]
+
+  #hands
+  mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
+                     MoreArgs = list(sigma = sigma_2, mv_scale = change_micro))
+  micro_staff <- mv_hands[1, ]
+  micro_mat <- mv_hands[2, ]
+  #sepsis
+  #this allows sepsis to be scaled and a baseline decided upon
+  all_micro <- micro_cot + micro_floor + micro_surf + micro_staff + micro_mat
+  max_micro <- max(all_micro)
+  #baseline alpha
+  alpha0 <- sepsis_baseline * 100
+  #baseline beta
+  beta0 <- 100 - alpha0
+  #change in micro relative to baseline
+  microD <- max_micro - all_micro
+  #delta
+  delta <- change_sepsis * microD
+  #alpha to use
+  alpha_sepsis <- alpha0 - (alpha0 + beta0) * delta
+  alpha_sepsis[alpha_sepsis < 0] <- 0
+  #beta to use
+  beta_sepsis <- beta0 + (alpha0 + beta0) * delta
+  beta_sepsis[beta_sepsis < 0] <- 0
+  alpha_sepsis[(alpha_sepsis / (alpha_sepsis + beta_sepsis)) < 0.02] <- 2
+  #sepsis
+  sepsis <- rbeta(size, alpha_sepsis, beta_sepsis)
+  
+  #creating data frame
+  df_ipc <- data.frame(
+    #weeks = weeks,
+    int_e1 = int_e1,
+    int_e2 = int_e2,
+    int_e3 = int_e3,
+    int_h1 = int_h1,
+    int_h2 = int_h2,
+    int_h3 = int_h3,
+    fid_cot = fid_cot,
+    fid_floor = fid_floor,
+    fid_surf = fid_surf,
+    fid_mat = fid_mat,
+    fid_staff = fid_staff,
+    micro_cot = micro_cot,
+    micro_floor = micro_floor,
+    micro_surf = micro_surf,
+    micro_staff = micro_staff,
+    micro_mat = micro_mat,
+    sepsis = sepsis
+  )
+  
+  df2 <- as.data.frame(apply(df_ipc, 2, scale))
+  
+  #first model ----
+  #lavaan formulation without latent variables
+  ipc_model <- '
+    #regressions
+    fid_cot ~ int_e1 + int_e2 + int_e3
+    fid_floor ~ int_e1 + int_e2 + int_e3
+    fid_surf ~ int_e1 + int_e2 + int_e3
+    
+    micro_cot ~ fid_cot
+    micro_floor ~ fid_floor
+    micro_surf ~ fid_surf
+
+    sepsis ~ micro_cot + micro_floor + micro_surf + micro_mat + micro_staff
+    
+    #covariance
+    micro_cot ~~ micro_floor
+    micro_cot ~~ micro_surf
+    micro_floor ~~ micro_surf
+  '
+  
+  #fitting the model
+  ipc_fit <- sem(ipc_model, data = df2)
+  
+  #finding the effect size
+  effect <- glm(sepsis ~ int_e1 + int_e2 + int_e3 + int_h1 + int_h2 + int_h3, data = df2)
+  return(effect)
+}
+
+#this simulates a situation where all interventions have an effect on fidelity and therefore
+#sepsis
+int_normal <- sim_sorting_reg(q1_reg, e1_mult = 1, e2_mult = 1, e3_mult = 1)
+
+#this simulates a situation where one intervention has no effect on fidelity and therefore sepsis
+int_dropped <- sim_sorting_reg(q1_reg, e1_mult = 0, e2_mult = 1, e3_mult = 0)
+
+
+```
+
+In a situation where all the IPC interventions have an equal effect on sepsis the coefficients for these interventions on sepsis will be `r int_normal[1]`, `r int_normal[2]` and `r int_normal[3]`. 
+
+In a situation where only one of the environmental interventions has an effect on cleanliness the coefficients for these interventions on sepsis will be `r int_dropped[1]`, `r int_dropped[2]` and `r int_dropped[3]`.
+
+Need to remember that if there is autocorrelation after accounting for the covariates (ie autocorrelation of the residuals), then splines for time trends will need to be added to account for this, as variables are supposed to be independent conditioning on explanatory variables
 
 ### Question 2: Is the cleanliness of specific ward "areas" more closely associated with the risk of sepsis? Is the cleanliness of specific ward "areas" more closely associated with specific IPC interventions? 
 
@@ -1036,7 +1235,7 @@ In this model, only cot contamination has any effect on sepsis. All other variab
 
 ```{r one area, echo = FALSE, warning = FALSE, message = FALSE, eval = FALSE}
 #simulating data ----
-sem_env_onearea <- function(x, size = 52, baseline = 20, fid_scale = 10){
+sem_env_onearea <- function(x, size = 52, baseline = 20, change_fid = 10){
   
   mv_2 <- function(x, y, sigma = sigma_2, ...){
     param <- rmvnorm(n = 1, mean = c((1 - x) * 100, (1 - y) * 100), sigma = sigma_2)
@@ -1066,12 +1265,12 @@ sem_env_onearea <- function(x, size = 52, baseline = 20, fid_scale = 10){
   int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
   int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
   int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
-  num_hands <- (int_h1 + int_h2 + int_h3) * fid_scale + baseline
+  num_hands <- (int_h1 + int_h2 + int_h3) * change_fid + baseline
   #environment
   int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
   int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
   int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
-  num_env <- (int_e1 + int_e2 + int_e3) * fid_scale + baseline
+  num_env <- (int_e1 + int_e2 + int_e3) * change_fid + baseline
   #simulating fidelity of intervention
   #overall environmental
   fid_cot <- rbeta(size, num_env, 100 - num_env)
@@ -1405,6 +1604,9 @@ plotter(data_oneipc)
 
 ### Question 4: Are there specific fidelity or microbiology thresholds we should be aiming for?
 
+This will be done by regressing microbiology on sepsis. This might be analysed in two different ways depending on whether the relationship is linear. 
+
+If the relationship is linear then the threshold will be based on clinically allowable levels of sepsis on the ward. If the relationship is not linear then it might be clear that there is a threshold below which sepsis becomes a lot less common. If the data looks like it warrants this, then splines will be used to show this relationship and determine where the change point is. 
 
 ### This is a simulation of a model that is completely independent
 
@@ -1704,7 +1906,6 @@ plotter2(data_mis)
 ### Notes
 
  - Can't have covariance relationship between micro_mat and micro_staff as theses are exogenous variables and lavaan is unable to estimate the covariance relationship between them. Can either leave that relationship out or use fixed.x = FALSE
- - If linear regression of covariates against outcome has autocorrelation after accounting for the covariates (eg some time trends), then splines for time trends will need to be added to account for this, as variables are supposed to be independent conditioning on explanatory variables
  - Think about modelling time dependent decay
       - Model time dependent decay in the simulations
       - In the analysis can look at time since intervention - an asymptotic or linear decay function to see how quickly the effects of interventions decay
