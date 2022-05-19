@@ -17,6 +17,7 @@ library(lavaan)
 library(mvtnorm)
 library(here)
 library(gt)
+library(ggdag)
 
 #this simulation simulates a simple situation, focussing on environmental cleanliness
 #it also allows to edit the effects of each layer on the next
@@ -112,7 +113,7 @@ sim_enveffect <- function(x, size = 52, baseline = 0.2, change_fid = 0.1, change
   
   #creating data frame
   df_ipc <- data.frame(
-    #weeks = weeks,
+    weeks = weeks,
     int_e1 = int_e1,
     int_e2 = int_e2,
     int_e3 = int_e3,
@@ -222,6 +223,64 @@ sem_env <- function(func, size = 52, baseline = 0.2, change_fid = 0.1, change_mi
   ))
   rownames(data) <- c()
   return(data)
+}
+
+#this function repeats the simulation a certain number of times and then plots it
+sim_timeseries <- function(func = func, reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.5, change_sepsis = 0.01, sepsis_baseline = 0.5){
+  fidcot_all <- data.frame()
+  fidfloor_all <- data.frame()
+  fidsurf_all <- data.frame()
+  fidmat_all <- data.frame()
+  fidstaff_all <- data.frame()
+  microcot_all <- data.frame()
+  microfloor_all <- data.frame()
+  microsurf_all <- data.frame()
+  micromat_all <- data.frame()
+  microstaff_all <- data.frame()
+  sepsis_all <- data.frame()
+  for(i in 1:reps){
+    #simulating time
+    data_run <- func(x = i, size = size, baseline = baseline, change_fid = change_fid, 
+                   change_micro = change_micro, change_sepsis = change_sepsis, sepsis_baseline = sepsis_baseline)
+
+    fidcot_all <- rbind(fidcot_all, data_run$fid_cot)
+    fidfloor_all <- rbind(fidfloor_all, data_run$fid_floor)
+    fidsurf_all <- rbind(fidsurf_all, data_run$fid_surf)
+    fidmat_all <- rbind(fidmat_all, data_run$fid_mat)
+    fidstaff_all <- rbind(fidstaff_all, data_run$fid_staff)
+    microcot_all <- rbind(microcot_all, data_run$micro_cot)
+    microfloor_all <- rbind(microfloor_all, data_run$micro_floor)
+    microsurf_all <- rbind(microsurf_all, data_run$micro_surf)
+    micromat_all <- rbind(micromat_all, data_run$micro_mat)
+    microstaff_all <- rbind(microstaff_all, data_run$micro_staff)
+    sepsis_all <- rbind(sepsis_all, data_run$sepsis)
+  }
+fidcot_stats <- sapply(fidcot_all, FUN = quantile)
+fidcot_stats2 <- as.data.frame(t(fidcot_stats))
+microcot_stats <- sapply(microcot_all, FUN = quantile)
+microcot_stats2 <- as.data.frame(t(microcot_stats)) / 15
+sepsis_stats <- sapply(sepsis_all, FUN = quantile)
+sepsis_stats2 <- as.data.frame(t(sepsis_stats))
+interventions <- c(Position(function(x) x > 0, data_run$int_h1),
+                   Position(function(x) x > 0, data_run$int_h2),
+                   Position(function(x) x > 0, data_run$int_h3),
+                   Position(function(x) x > 0, data_run$int_e1),
+                   Position(function(x) x > 0, data_run$int_e2),
+                   Position(function(x) x > 0, data_run$int_e3))
+
+colors <- c("fidcot_stats2" = "black", "microcot_stats2" = "blue", "sepsis_stats2" = "red")
+ggplot() + 
+  geom_line(data = fidcot_stats2, aes(y = `50%`, x = seq(1:52)), colour = "black") + 
+  geom_ribbon(data = fidcot_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "black") + 
+  geom_line(data = microcot_stats2, aes(y = `50%`, x = seq(1:52)), colour = "blue") + 
+  geom_ribbon(data = microcot_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "blue") +
+  geom_line(data = sepsis_stats2, aes(y = `50%`, x = seq(1:52)), colour = "red") + 
+  geom_ribbon(data = sepsis_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "red") +
+  geom_vline(xintercept = interventions) +
+  scale_y_continuous(name = "Proportion fidelity of cleanliness and neonates with sepsis", limits = c(0, 1),
+                     sec.axis = sec_axis(trans=~.*15, name = "Microbiology")) +
+  labs(color = "Legend") +
+  scale_color_manual(values = colors)
 }
 
 #this function runs the simulation function a certain number of times and collates the results
@@ -603,6 +662,163 @@ Need to sort out:
       a) Work back from SEM results. Aim for a specific HAI rate then work back to fidelity and microbiology.
       b) Linear regression with fitted splines? 
       
+## Model framework
+
+To investigate these questions we will use a combination of structural equation modelling and traditional regression methods. For the structural equation models the modelling framework relies on the assumed relationships as illustrated in the diagram below. 
+
+```{r relationships, echo = FALSE, warning= FALSE, message = FALSE}
+
+#first creating the coordinates
+coord_dag <- list(
+  x = c(Inte1 = 0, 
+        Inte2 = 1, 
+        Inte3 = 2, 
+        Inth1 = 4,
+        Inth2 = 5, 
+        Inth3 = 6,
+        Fc = 0,
+        Ff = 1,
+        Fs = 2,
+        Fst = 4.5,
+        Fm = 5.5,
+        Mc = 0,
+        Mf = 1,
+        Ms = 2,
+        Mst = 4.5,
+        Mm = 5.5,
+        S = 3),
+  y = c(Inte1 = 5, 
+        Inte2 = 5, 
+        Inte3 = 5, 
+        Inth1 = 5,
+        Inth2 = 5, 
+        Inth3 = 5,
+        Fc = 3,
+        Ff = 3,
+        Fs = 3,
+        Fst = 3,
+        Fm = 3,
+        Mc = 1,
+        Mf = 1,
+        Ms = 1,
+        Mst = 1,
+        Mm = 1,
+        S = -1)
+)
+
+#next creating the dag
+sem_dag <- ggdag::dagify(Fc ~ Inte1,
+                         Fc ~ Inte2,
+                         Fc ~ Inte3,
+                         Ff ~ Inte1,
+                         Ff ~ Inte2,
+                         Ff ~ Inte3,
+                         Fs ~ Inte1,
+                         Fs ~ Inte2,
+                         Fs ~ Inte3,
+                         Fst ~ Inth1,
+                         Fst ~ Inth2,
+                         Fst ~ Inth3,
+                         Fm ~ Inth1,
+                         Fm ~ Inth2,
+                         Fm ~ Inth3,
+                         Mc ~ Fc,
+                         Mf ~ Ff,
+                         Ms ~ Fs,
+                         Mst ~ Fst,
+                         Mm ~ Fm,
+                         S ~ Mc,
+                         S ~ Mf,
+                         S ~ Ms,
+                         S ~ Mst,
+                         S ~ Mm,
+                         coords = coord_dag)
+
+#now plotting the dag
+ggdag::ggdag(sem_dag) +
+   theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+
+
+
+#first creating the coordinates
+coord_dag2 <- list(
+  x = c(Inte1 = 0, 
+        Inte2 = 1, 
+        Inte3 = 2, 
+        Fc = 0,
+        Ff = 1,
+        Fs = 2,
+        Mc = 0,
+        Mf = 1,
+        Ms = 2,
+        Mst = 4.5,
+        Mm = 5.5,
+        S = 3),
+  y = c(Inte1 = 5, 
+        Inte2 = 5, 
+        Inte3 = 5, 
+        Inth1 = 5,
+        Inth2 = 5, 
+        Inth3 = 5,
+        Fc = 3,
+        Ff = 3,
+        Fs = 3,
+        Fst = 3,
+        Fm = 3,
+        Mc = 1,
+        Mf = 1,
+        Ms = 1,
+        Mst = 1,
+        Mm = 1,
+        S = -1)
+)
+
+#next creating the dag
+sem_dag2 <- ggdag::dagify(Fc ~ Inte1,
+                         Fc ~ Inte2,
+                         Fc ~ Inte3,
+                         Ff ~ Inte1,
+                         Ff ~ Inte2,
+                         Ff ~ Inte3,
+                         Fs ~ Inte1,
+                         Fs ~ Inte2,
+                         Fs ~ Inte3,
+                         Mc ~ Fc,
+                         Mf ~ Ff,
+                         Ms ~ Fs,
+                         S ~ Mc,
+                         S ~ Mf,
+                         S ~ Ms,
+                         S ~ Mst,
+                         S ~ Mm,
+                         coords = coord_dag)
+
+#now plotting the dag
+ggdag::ggdag(sem_dag2) +
+   theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+ 
+```
+     
+The first graph represents the overall conceptual model. In which the initial layer (Inte1 - Inth3) represents a hypothesised 6 interventions, which are split into two domains, environmental interventions and hand hygiene interventions. These all have effects on the next layer, which represents the fidelity of these interventions in 5 different sub-domains (Fc = fidelity for cots, Ff = fidelity for floors, Fs = fidelity for surfaces, Fst = fidelity for staff hand hygiene, Fm = fidelity for maternal hand hygiene). Environmental interventions only have effects on environmental fidelity and the same for hand hygiene interventions. The next layer represents the microbiology in each of the 5 different sub-domains (Mc = fidelity for cots, Mf = fidelity for floors, Ms = fidelity for surfaces, Mst = fidelity for staff hand hygiene, Mm = fidelity for maternal hand hygiene). Fidelity in one sub-domain only has an effect on the microbiology of the same sub-domain. All microbiology sub-domains have an effect on sepsis. 
+
+The second graph represents the model that is the focus of the simulations below. Due to sample size problems we simplified the models by focussing on each of the domains in turn ie. environmental hygiene and then hand hygiene. This will be reflected in the eventual analysis. However for the simulations we will only look at the environmental domain, as the hand hygiene domain is a simplification of the environmental domain. 
+     
 ## Decision rules for accepting models
 
 I will look at the following fit metrics to determine whether the models have good or acceptable fit for the data. 
@@ -636,11 +852,9 @@ The most stringent accepted fit metrics are:
 
 However, some investigators use less stringent metrics. 
 
-### Changing effect size on the proportion of simulations that are accepted
+## How the relationships between the data are simulated
 
-There are 3 layers of effect. 
-
-C = change
+There are 3 layers of effect. Each of these is simulated based on the one before. 
 
 1) IPC interventions on fidelity
 
@@ -672,6 +886,18 @@ Where $ \delta = C_{sep} \times D_{mic}$, $ \alpha_0 = B_{sep} \times 100$ and $
 
 $D_{mic}$ is a vector represented by $max_{mic} - micro_i$ where $micro_i$ is a vector of all microbiology values for every area combined by addition and $max_{mic}$ is the largest value of $micro_i$. $C_{sep}$ represents the desired change in the proportion of neonates with sepsis from a 1 log drop in all microbiology parameters, and $B_{sep}$ represents the pre-specified baseline level of sepsis. 
 
+## Plotting this simulation as a time series
+
+```{r time series, echo = FALSE, warning = FALSE}
+
+sim_timeseries(reps = 100, func = sim_enveffect)
+
+```
+
+This time series is plotted by choosing the median and IQR of 1000 simulations using the midpoints of the parameters tested below. The blue line represents microbiology, the red line represents sepsis and the black line represents fidelity of the intervention. 
+
+
+### How does altering the effect size of different layers alter the probability of accepting the model? 
 
 ```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
 #simulating data ----
@@ -697,11 +923,6 @@ ggplot(data = effects, aes(x = change_micro, y = change_fid, fill = prop_passing
                        name = "Proportion of simulations accepted") +
   ylab("Effect of changing intervention on fidelity") +
   xlab("Effect of changing fidelity on microbiology")
-
-#plots the parameters 
-plotter(data_effects)
-
-
 ```
 
 The effect of changing intervention on fidelity (y axis) represents the % change in fidelity based on switching a single intervention from off to on. 
@@ -710,173 +931,7 @@ The effect of changing fidelity on microbiology (x axis) represents the log drop
 
 The effect of changing microbiology on sepsis (facets) represents the % change in sepsis based on a 1 log drop in all areas of microbiology.
 
-### Plotting a time series of the variables for interest
-
-```{r time series, echo = FALSE, warning = FALSE}
-
-#this function repeats the simulation a certain number of times and then plots it
-sim_timeseries <- function(reps = 100, size = 52, baseline = 0.2, change_fid = 0.1, change_micro = 0.5, change_sepsis = 0.01, sepsis_baseline = 0.5){
-  
-  mv_2 <- function(x, y, sigma = sigma_2, mv_scale = change_micro, ...){
-    mv_scale <- 15 * mv_scale
-    param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale), sigma = sigma_2) 
-    #param <- round(param)
-    return(param)
-  }
-  
-  #covariance matrix
-  sigma_2 <- matrix(c(1, 0.5, 
-                      0.5, 1), ncol = 2)
-  
-  mv_3 <- function(x, y, z, sigma = sigma_3, mv_scale = change_micro, ...){
-    mv_scale <- 15 * mv_scale
-    param <- rmvnorm(n = 1, mean = c(15 - x * mv_scale, 15 - y * mv_scale, 
-                                     15 - z * mv_scale), sigma = sigma_3)
-    #param <- round(param)
-    return(param)
-  }
-  
-  sigma_3 <- matrix(c(1, 0.5, 0.5, 
-                      0.5, 1, 0.5, 
-                      0.5, 0.5, 1), ncol = 3)
-  
-  fidcot_all <- data.frame()
-  fidfloor_all <- data.frame()
-  fidsurf_all <- data.frame()
-  fidmat_all <- data.frame()
-  fidstaff_all <- data.frame()
-  microcot_all <- data.frame()
-  microfloor_all <- data.frame()
-  microsurf_all <- data.frame()
-  micromat_all <- data.frame()
-  microstaff_all <- data.frame()
-  sepsis_all <- data.frame()
-  for(i in 1:reps){
-    #simulating time
-      #simulating time
-  weeks <- seq(1:size)
-  #simulating interventions
-  #hands
-  int_h1 <- c(rep(0, round(size / 4)), rep(1, size - round(size / 4)))
-  int_h2 <- c(rep(0, size - round(size / 3)), rep(1, round(size / 3)))
-  int_h3 <- c(rep(0, round(size / 4 * 3)), rep(1, size - round(size / 4 * 3)))
-  alpha_hands <- ((int_h1 + int_h2 + int_h3) * change_fid + baseline) * 10
-  alpha_hands[alpha_hands<0] <- 0
-  alpha_hands[alpha_hands>10] <- 10
-  beta_hands <- 10 - alpha_hands
-  #environment
-  int_e1 <- c(rep(0, round(size / 3)), rep(1, size - round(size / 3)))
-  int_e2 <- c(rep(0, round(size / 2)), rep(1, size - round(size / 2)))
-  int_e3 <- c(rep(0, round(size / 10 * 2)), rep(1, size - round(size / 10 * 2)))
-  alpha_env <- ((int_e1 + int_e2 + int_e3) * change_fid + baseline) * 10
-  alpha_env[alpha_env<0] <- 0
-  alpha_env[alpha_env>10] <- 10
-  beta_env <- 10 - alpha_env
-
-  #simulating fidelity of intervention
-  #overall environmental
-  fid_cot <- rbeta(size, alpha_env, beta_env)
-  fid_floor <- rbeta(size, alpha_env, beta_env)
-  fid_surf <- rbeta(size, alpha_env, beta_env)
-  #hands
-  fid_mat <- rbeta(size, alpha_hands, beta_hands)
-  fid_staff <- rbeta(size, alpha_hands, beta_hands)
-  #microbiology
-  #environmental
-  mv_env <- mapply(FUN = mv_3, x = fid_cot, y = fid_floor, 
-                   z = fid_surf, MoreArgs = list(sigma = sigma_3, mv_scale = change_micro))
-  micro_cot <- mv_env[1, ]
-  micro_floor <- mv_env[2, ]
-  micro_surf <- mv_env[3, ]
-
-  #hands
-  mv_hands <- mapply(FUN = mv_2, x = fid_staff, y = fid_mat, 
-                     MoreArgs = list(sigma = sigma_2, mv_scale = change_micro))
-  micro_staff <- mv_hands[1, ]
-  micro_mat <- mv_hands[2, ]
-  #sepsis
-  #this allows sepsis to be scaled and a baseline decided upon
-  all_micro <- micro_cot + micro_floor + micro_surf + micro_staff + micro_mat
-  max_micro <- max(all_micro)
-  #baseline alpha
-  alpha0 <- sepsis_baseline * 100
-  #baseline beta
-  beta0 <- 100 - alpha0
-  #change in micro relative to baseline
-  microD <- max_micro - all_micro
-  #delta
-  delta <- change_sepsis * microD
-  #alpha to use
-  alpha_sepsis <- alpha0 - (alpha0 + beta0) * delta
-  alpha_sepsis[alpha_sepsis < 0] <- 0
-  #beta to use
-  beta_sepsis <- beta0 + (alpha0 + beta0) * delta
-  beta_sepsis[beta_sepsis < 0] <- 0
-  #sepsis
-  sepsis <- rbeta(size, alpha_sepsis, beta_sepsis)
-  
-  #creating data frame
-  df_ipc <- data.frame(
-    #weeks = weeks,
-    int_e1 = int_e1,
-    int_e2 = int_e2,
-    int_e3 = int_e3,
-    int_h1 = int_h1,
-    int_h2 = int_h2,
-    int_h3 = int_h3,
-    fid_cot = fid_cot,
-    fid_floor = fid_floor,
-    fid_surf = fid_surf,
-    fid_mat = fid_mat,
-    fid_staff = fid_staff,
-    micro_cot = micro_cot,
-    micro_floor = micro_floor,
-    micro_surf = micro_surf,
-    micro_staff = micro_staff,
-    micro_mat = micro_mat,
-    sepsis = sepsis
-  )
-    fidcot_all <- rbind(fidcot_all, fid_cot)
-    fidfloor_all <- rbind(fidfloor_all, fid_floor)
-    fidsurf_all <- rbind(fidsurf_all, fid_surf)
-    fidmat_all <- rbind(fidmat_all, fid_mat)
-    fidstaff_all <- rbind(fidstaff_all, fid_staff)
-    microcot_all <- rbind(microcot_all, micro_cot)
-    microfloor_all <- rbind(microfloor_all, micro_floor)
-    microsurf_all <- rbind(microsurf_all, micro_surf)
-    micromat_all <- rbind(micromat_all, micro_mat)
-    microstaff_all <- rbind(microstaff_all, micro_staff)
-    sepsis_all <- rbind(sepsis_all, sepsis)
-  }
-  fidcot_stats <- sapply(fidcot_all, FUN = quantile)
-  fidcot_stats2 <- as.data.frame(t(fidcot_stats))
-  microcot_stats <- sapply(microcot_all, FUN = quantile)
-  microcot_stats2 <- as.data.frame(t(microcot_stats)) / 15
-  sepsis_stats <- sapply(sepsis_all, FUN = quantile)
-  sepsis_stats2 <- as.data.frame(t(sepsis_stats))
-  interventions <- c(Position(function(x) x > 0, int_h1),
-                     Position(function(x) x > 0, int_h2),
-                     Position(function(x) x > 0, int_h3),
-                     Position(function(x) x > 0, int_e1),
-                     Position(function(x) x > 0, int_e2),
-                     Position(function(x) x > 0, int_e3))
-  ggplot() + 
-    geom_line(data = fidcot_stats2, aes(y = `50%`, x = seq(1:52)), colour = "black") + 
-    geom_ribbon(data = fidcot_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "black") + 
-    geom_line(data = microcot_stats2, aes(y = `50%`, x = seq(1:52)), colour = "blue") + 
-    geom_ribbon(data = microcot_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "blue") +
-    geom_line(data = sepsis_stats2, aes(y = `50%`, x = seq(1:52)), colour = "red") + 
-    geom_ribbon(data = sepsis_stats2, aes(ymin = `25%`, ymax = `75%`, x = seq(1:52)), alpha = 0.5, fill = "red") +
-    geom_vline(xintercept = interventions) +
-    scale_y_continuous(name = "Proportion fidelity of cleanliness and neonates with sepsis", limits = c(0, 1),
-                       sec.axis = sec_axis(trans=~.*15, name = "Microbiology"))
-}
-
-sim_timeseries(reps = 1000)
-
-```
-
-This time series illustrates how the data that we are simulating looks. 
+With increasing magnitude of effect at each of the levels, there are an increasing proportion of simulations that are accepted, which is what would be expected. 
 
 ### This is the basic model for environmental SEM
 
