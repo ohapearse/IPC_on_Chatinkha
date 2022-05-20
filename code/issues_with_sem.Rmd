@@ -560,23 +560,20 @@ runit <- function(func){
 }
 
 #runs a number of different scenarios that mess with the effect sizes and collates the data
-runeffect <- function(func1, func2){
-  #small effect is 5, mod effect is 10, large effect is 15
- fid_vect <- c(rep(0.05, 9),
-          rep(0.10, 9),
-          rep(0.15, 9))
- micro_vect <- rep(c(0.25, 0.25, 0.25,
-                      0.5, 0.5, 0.5,
-                      0.75, 0.75, 0.75), 3)
- sepsis_vect = rep(c(0.005, 0.01, 0.015), 9)
-  
+runeffect <- function(func1, func2, reps = 100, size = 52, baseline = 0.2, sepsis_baseline = 0.5, 
+                      change_sepsis = 0.01, change_micro = 0.5, change_fid = 0.1){
+  fid_vect <- change_fid
+  micro_vect <- change_micro
+  sepsis_vect <- change_sepsis
  all_runs <- mapply(FUN = mult_sorting_effect, 
                     change_fid = fid_vect, 
                     change_micro = micro_vect,
                     change_sepsis = sepsis_vect,
-                    MoreArgs = list(reps = 100, size = 52, 
+                    MoreArgs = list(reps = reps, size = size, 
                                     func1 = func1,
-                                    func2 = func2))
+                                    func2 = func2,
+                                    baseline = baseline,
+                                    sepsis_baseline = sepsis_baseline))
  
   all_data <- data.frame()
   for (i in 1:ncol(all_runs)){
@@ -896,13 +893,19 @@ sim_timeseries(reps = 100, func = sim_enveffect)
 
 This time series is plotted by choosing the median and IQR of 1000 simulations using the midpoints of the parameters tested below. The blue line represents microbiology, the red line represents sepsis and the black line represents fidelity of the intervention. 
 
-
-### How does altering the effect size of different layers alter the probability of accepting the model? 
+## How does altering the effect size of different layers alter the probability of accepting the model? 
 
 ```{r effect size, echo = FALSE, warning = FALSE, message = FALSE}
 #simulating data ----
 #this function runs the simulator for different parameters
-data_effects <- runeffect(func1 = sem_env, func2 = sim_enveffect)
+data_effects <- runeffect(func1 = sem_env, func2 = sim_enveffect,
+                          change_fid = c(rep(0.05, 9), rep(0.10, 9), rep(0.15, 9)),
+                          change_micro = rep(c(0.25, 0.25, 0.25, 0.5, 0.5, 0.5, 0.75, 0.75, 0.75), 3),
+                          change_sepsis = rep(c(0.005, 0.01, 0.015), 9),
+                          reps = 100,
+                          size = 52, 
+                          baseline = 0.2,
+                          sepsis_baseline = 0.5)
 
 #editing the data a little
 effects <- data_effects %>%
@@ -932,6 +935,11 @@ The effect of changing fidelity on microbiology (x axis) represents the log drop
 The effect of changing microbiology on sepsis (facets) represents the % change in sepsis based on a 1 log drop in all areas of microbiology.
 
 With increasing magnitude of effect at each of the levels, there are an increasing proportion of simulations that are accepted, which is what would be expected. 
+
+## Testing different sample sizes
+
+
+
 
 ### This is the basic model for environmental SEM
 
